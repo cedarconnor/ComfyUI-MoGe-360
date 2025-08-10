@@ -9,7 +9,7 @@ import numpy as np
 import trimesh
 from PIL import Image
 from pathlib import Path
-from typing import Dict, Tuple, Any
+from typing import Dict, List, Tuple, Any
 import logging
 
 from .spherical_utils import SphericalProjection
@@ -20,36 +20,149 @@ import folder_paths
 log = logging.getLogger(__name__)
 
 class Layer_Mesher_Spherical:
-    """Create spherical mesh from layered depth and RGB data."""
+    """Create spherical meshes from layered panoramic data."""
     
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "layer_rgb": ("IMAGE",),  # [1, H, W, 3]
-                "layer_depth": ("IMAGE",),  # [1, H, W, 3] (depth in all channels)
-                "layer_alpha": ("IMAGE",),  # [1, H, W, 3] (alpha mask)
+                "layer_stack": ("LAYER_STACK",),
                 "mesh_resolution": ("INT", {"default": 1024, "min": 512, "max": 2048, "step": 128}),
+                "layer_selection": (["all", "sky_only", "background_only", "objects_only"], {"default": "all"}),
                 "depth_scale": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 10.0, "step": 0.1}),
                 "remove_edge": ("BOOLEAN", {"default": True}),
                 "smooth_normals": ("BOOLEAN", {"default": True}),
                 "metallic_factor": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.01}),
                 "roughness_factor": ("FLOAT", {"default": 0.8, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "merge_layers": ("BOOLEAN", {"default": False}),
             },
+            "optional": {
+                "layer_rgb": ("IMAGE",),  # Legacy single layer input
+                "layer_depth": ("IMAGE",), 
+                "layer_alpha": ("IMAGE",),
+            }
         }
 
     RETURN_TYPES = ("TRIMESH", "IMAGE", "IMAGE")
     RETURN_NAMES = ("spherical_mesh", "sphere_depth", "sphere_normals")
     FUNCTION = "create_spherical_mesh"
     CATEGORY = "MoGe360/Meshing"
-    DESCRIPTION = "Create spherical mesh from layered panoramic depth and RGB"
+    DESCRIPTION = "Create spherical meshes from layered panoramic data"
 
-    def create_spherical_mesh(self, layer_rgb: torch.Tensor, layer_depth: torch.Tensor, 
-                            layer_alpha: torch.Tensor, mesh_resolution: int, depth_scale: float,
-                            remove_edge: bool, smooth_normals: bool, metallic_factor: float, 
-                            roughness_factor: float):
+    def create_spherical_mesh(self, layer_stack=None, mesh_resolution: int = 1024, 
+                            layer_selection: str = "all", depth_scale: float = 1.0,
+                            remove_edge: bool = True, smooth_normals: bool = True, 
+                            metallic_factor: float = 0.0, roughness_factor: float = 0.8,
+                            merge_layers: bool = False, layer_rgb: torch.Tensor = None, 
+                            layer_depth: torch.Tensor = None, layer_alpha: torch.Tensor = None):
         
         device = mm.get_torch_device()
+        
+        # Determine if using layered system or legacy mode
+        if layer_stack is not None:
+            return self._create_from_layer_stack(layer_stack, mesh_resolution, layer_selection, 
+                                               depth_scale, remove_edge, smooth_normals, 
+                                               metallic_factor, roughness_factor, merge_layers, device)
+        
+        # Legacy mode - single layer inputs
+        if layer_rgb is None or layer_depth is None or layer_alpha is None:
+            raise ValueError("Either layer_stack or all legacy inputs (layer_rgb, layer_depth, layer_alpha) must be provided")
+        
+        return self._create_legacy_inputs(layer_rgb, layer_depth, layer_alpha, mesh_resolution,
+                                         depth_scale, remove_edge, smooth_normals, 
+                                         metallic_factor, roughness_factor, device)
+    
+    def _create_from_layer_stack(self, layer_stack: Dict, mesh_resolution: int, layer_selection: str,
+                                depth_scale: float, remove_edge: bool, smooth_normals: bool,
+                                metallic_factor: float, roughness_factor: float, merge_layers: bool, device):
+        """Create meshes from layered data."""
+        
+        layers = layer_stack['layers']
+        H, W = layer_stack['dimensions']
+        
+        log.info(f"Creating meshes from {len(layers)} layers: {[l['type'] for l in layers]}")
+        
+        # Filter layers based on selection
+        selected_layers = []
+        for layer in layers:
+            layer_type = layer['type']
+            if (layer_selection == "all" or 
+                (layer_selection == "sky_only" and layer_type == "sky") or
+                (layer_selection == "background_only" and layer_type == "background") or
+                (layer_selection == "objects_only" and layer_type == "object")):
+                selected_layers.append(layer)
+        
+        if not selected_layers:
+            log.warning(f"No layers selected with filter: {layer_selection}")
+            # Return empty mesh
+            empty_mesh = trimesh.Trimesh()
+            empty_tensor = torch.zeros((1, H, W, 3), device=device)
+            return (empty_mesh, empty_tensor, empty_tensor)
+        
+        log.info(f"Selected {len(selected_layers)} layers: {[l['type'] for l in selected_layers]}")
+        
+        if merge_layers or len(selected_layers) == 1:
+            # Merge layers into single mesh
+            return self._create_merged_mesh(selected_layers, mesh_resolution, depth_scale, 
+                                          remove_edge, smooth_normals, metallic_factor, 
+                                          roughness_factor, device, H, W)
+        else:
+            # For now, just use the first selected layer
+            # TODO: Return multiple meshes in future
+            return self._create_layer_mesh(selected_layers[0], mesh_resolution, depth_scale,
+                                         remove_edge, smooth_normals, metallic_factor,
+                                         roughness_factor, device, H, W)
+    
+    def _create_merged_mesh(self, layers: List[Dict], mesh_resolution: int, depth_scale: float,
+                           remove_edge: bool, smooth_normals: bool, metallic_factor: float,
+                           roughness_factor: float, device, H: int, W: int):
+        """Create a single mesh from merged layers."""
+        
+        # Merge layers by compositing them
+        merged_rgb = np.zeros((H, W, 3), dtype=np.float32)
+        merged_depth = np.zeros((H, W), dtype=np.float32) 
+        merged_alpha = np.zeros((H, W), dtype=np.float32)
+        
+        # Sort layers by priority (background first)
+        sorted_layers = sorted(layers, key=lambda x: x['priority'])
+        
+        for layer in sorted_layers:
+            alpha = layer['alpha']
+            rgb = layer['rgb']
+            depth = layer['depth']
+            
+            # Alpha blend
+            merged_rgb = merged_rgb * (1 - alpha[..., np.newaxis]) + rgb * alpha[..., np.newaxis]
+            merged_depth = merged_depth * (1 - alpha) + depth * alpha
+            merged_alpha = np.maximum(merged_alpha, alpha)
+        
+        log.info(f"Merged {len(layers)} layers, coverage: {merged_alpha.mean():.2%}")
+        
+        # Create mesh from merged data
+        return self._create_single_mesh(merged_rgb, merged_depth, merged_alpha, mesh_resolution,
+                                      depth_scale, remove_edge, smooth_normals, metallic_factor,
+                                      roughness_factor, device, H, W)
+    
+    def _create_layer_mesh(self, layer: Dict, mesh_resolution: int, depth_scale: float,
+                          remove_edge: bool, smooth_normals: bool, metallic_factor: float,
+                          roughness_factor: float, device, H: int, W: int):
+        """Create mesh from a single layer."""
+        
+        rgb = layer['rgb']
+        depth = layer['depth'] 
+        alpha = layer['alpha']
+        
+        log.info(f"Creating mesh for {layer['type']} layer, coverage: {alpha.mean():.2%}")
+        
+        return self._create_single_mesh(rgb, depth, alpha, mesh_resolution, depth_scale,
+                                      remove_edge, smooth_normals, metallic_factor, 
+                                      roughness_factor, device, H, W)
+    
+    def _create_legacy_inputs(self, layer_rgb: torch.Tensor, layer_depth: torch.Tensor, 
+                            layer_alpha: torch.Tensor, mesh_resolution: int, depth_scale: float,
+                            remove_edge: bool, smooth_normals: bool, metallic_factor: float, 
+                            roughness_factor: float, device):
+        """Create mesh from legacy single-layer inputs."""
         
         # Convert to numpy
         rgb_np = layer_rgb[0].cpu().numpy().astype(np.float32)  # [H, W, 3]
@@ -58,7 +171,16 @@ class Layer_Mesher_Spherical:
         
         H, W = depth_np.shape
         
-        log.info(f"Creating spherical mesh from {W}x{H} ERP data")
+        log.info(f"Creating spherical mesh from {W}x{H} legacy ERP data")
+        
+        return self._create_single_mesh(rgb_np, depth_np, alpha_np, mesh_resolution, depth_scale,
+                                      remove_edge, smooth_normals, metallic_factor,
+                                      roughness_factor, device, H, W)
+    
+    def _create_single_mesh(self, rgb_np: np.ndarray, depth_np: np.ndarray, alpha_np: np.ndarray,
+                           mesh_resolution: int, depth_scale: float, remove_edge: bool, 
+                           smooth_normals: bool, metallic_factor: float, roughness_factor: float,
+                           device, H: int, W: int):
         
         # Resize to mesh resolution if needed
         if W != mesh_resolution or H != mesh_resolution // 2:

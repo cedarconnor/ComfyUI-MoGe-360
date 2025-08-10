@@ -213,6 +213,13 @@ from .moge360_layers.mesh_nodes import (
     Layer_Mesher_Spherical,
     Spherical_Mesh_Exporter
 )
+from .moge360_layers.layer_nodes import (
+    Sky_Background_Splitter,
+    Layer_Builder_360
+)
+from .moge360_layers.detection_nodes import (
+    OWLViT_Detect_360
+)
 
 #region NodeMappings
 NODE_CLASS_MAPPINGS = {
@@ -225,6 +232,11 @@ NODE_CLASS_MAPPINGS = {
     # Spherical Meshing nodes
     "Layer_Mesher_Spherical": Layer_Mesher_Spherical,
     "Spherical_Mesh_Exporter": Spherical_Mesh_Exporter,
+    # Layer Processing nodes
+    "Sky_Background_Splitter": Sky_Background_Splitter,
+    "Layer_Builder_360": Layer_Builder_360,
+    # Detection nodes
+    "OWLViT_Detect_360": OWLViT_Detect_360,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "DownloadAndLoadMoGeModel": "(Down)load MoGe Model",
@@ -236,4 +248,9 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     # Spherical Meshing nodes
     "Layer_Mesher_Spherical": "360° Layer Mesher",
     "Spherical_Mesh_Exporter": "Spherical Mesh Exporter",
+    # Layer Processing nodes
+    "Sky_Background_Splitter": "Sky/Background Splitter",
+    "Layer_Builder_360": "360° Layer Builder",
+    # Detection nodes
+    "OWLViT_Detect_360": "OWL-ViT 360° Object Detector",
     }

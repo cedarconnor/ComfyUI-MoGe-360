@@ -124,53 +124,65 @@ class SphericalProjection:
         extrinsics = np.eye(4, dtype=np.float32)
         extrinsics[:3, :3] = R
         
-        # Sample perspective tile using inverse projection
+        # Sample perspective tile using inverse projection (vectorized for speed)
         tile_image = np.zeros((tile_size, tile_size, erp_image.shape[2]), dtype=erp_image.dtype)
         
-        for v in range(tile_size):
-            for u in range(tile_size):
-                # Convert tile pixel to normalized camera coordinates
-                x_cam = (u - tile_size / 2) / focal_length
-                y_cam = (v - tile_size / 2) / focal_length
-                z_cam = 1.0
+        # Create coordinate grids for vectorized processing
+        u_coords, v_coords = np.meshgrid(np.arange(tile_size), np.arange(tile_size), indexing='xy')
+        
+        # Convert tile pixels to normalized camera coordinates (vectorized)
+        x_cam = (u_coords - tile_size / 2) / focal_length
+        y_cam = (v_coords - tile_size / 2) / focal_length
+        z_cam = np.ones_like(x_cam)
+        
+        # Stack camera rays [3, H, W]
+        cam_rays = np.stack([x_cam.flatten(), y_cam.flatten(), z_cam.flatten()], axis=0)  # [3, N]
+        
+        # Transform to world coordinates (batch operation)
+        world_rays = R.T @ cam_rays  # [3, N]
+        
+        # Normalize rays
+        ray_norms = np.linalg.norm(world_rays, axis=0, keepdims=True)
+        world_rays = world_rays / (ray_norms + 1e-8)
+        
+        # Convert to ERP coordinates (vectorized)
+        x_world, y_world, z_world = world_rays[0], world_rays[1], world_rays[2]
+        
+        # Batch conversion to ERP coordinates
+        erp_coords = np.zeros((2, len(x_world)))
+        for i in range(len(x_world)):
+            erp_u, erp_v = SphericalProjection.xyz_to_erp(
+                x_world[i], y_world[i], z_world[i], width, height
+            )
+            erp_coords[0, i] = erp_u
+            erp_coords[1, i] = erp_v
+        
+        # Handle longitude wrapping and clamping
+        erp_coords[0] = np.where(erp_coords[0] < 0, erp_coords[0] + width, erp_coords[0])
+        erp_coords[0] = np.where(erp_coords[0] >= width, erp_coords[0] - width, erp_coords[0])
+        erp_coords[1] = np.clip(erp_coords[1], 0, height - 1)
+        
+        # Bilinear sampling (vectorized where possible)
+        for idx, (v, u) in enumerate(zip(v_coords.flatten(), u_coords.flatten())):
+            erp_u, erp_v = erp_coords[0, idx], erp_coords[1, idx]
+            
+            if 0 <= erp_u < width and 0 <= erp_v < height:
+                u0, v0 = int(erp_u), int(erp_v)
+                u1, v1 = min(u0 + 1, width - 1), min(v0 + 1, height - 1)
                 
-                # Transform to world coordinates
-                cam_ray = np.array([x_cam, y_cam, z_cam])
-                world_ray = R.T @ cam_ray  # Camera to world
-                world_ray = world_ray / np.linalg.norm(world_ray)
+                # Handle longitude wrap for u1
+                if u1 == width:
+                    u1 = 0
                 
-                # Convert to ERP coordinates
-                erp_u, erp_v = SphericalProjection.xyz_to_erp(
-                    world_ray[0], world_ray[1], world_ray[2], width, height
+                wu = erp_u - u0
+                wv = erp_v - v0
+                
+                tile_image[v, u] = (
+                    (1 - wu) * (1 - wv) * erp_image[v0, u0] +
+                    wu * (1 - wv) * erp_image[v0, u1] +
+                    (1 - wu) * wv * erp_image[v1, u0] +
+                    wu * wv * erp_image[v1, u1]
                 )
-                
-                # Handle longitude wrapping
-                if erp_u < 0:
-                    erp_u += width
-                elif erp_u >= width:
-                    erp_u -= width
-                    
-                # Clamp latitude
-                erp_v = max(0, min(height - 1, erp_v))
-                
-                # Bilinear interpolation
-                if 0 <= erp_u < width and 0 <= erp_v < height:
-                    u0, v0 = int(erp_u), int(erp_v)
-                    u1, v1 = min(u0 + 1, width - 1), min(v0 + 1, height - 1)
-                    
-                    # Handle longitude wrap for u1
-                    if u1 == width:
-                        u1 = 0
-                    
-                    wu = erp_u - u0
-                    wv = erp_v - v0
-                    
-                    tile_image[v, u] = (
-                        (1 - wu) * (1 - wv) * erp_image[v0, u0] +
-                        wu * (1 - wv) * erp_image[v0, u1] +
-                        (1 - wu) * wv * erp_image[v1, u0] +
-                        wu * wv * erp_image[v1, u1]
-                    )
         
         return tile_image, intrinsics, extrinsics
 

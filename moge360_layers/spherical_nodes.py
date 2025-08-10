@@ -57,12 +57,14 @@ class Pano_TileSampler_Spherical:
         
         log.info(f"Created {len(tiles_params)} tiles for {grid_yaw}x{grid_pitch} grid")
         
-        # Sample all tiles
+        # Sample all tiles with progress logging
         tiles = []
         intrinsics_list = []
         extrinsics_list = []
         
-        for tile_params in tiles_params:
+        for i, tile_params in enumerate(tiles_params):
+            log.info(f"Sampling tile {i+1}/{len(tiles_params)}: lon={tile_params['center_lon']:.1f}°, lat={tile_params['center_lat']:.1f}°")
+            
             tile_img, intrinsics, extrinsics = SphericalProjection.sample_perspective_tile(
                 erp_np, 
                 tile_params['center_lon'],
@@ -74,6 +76,10 @@ class Pano_TileSampler_Spherical:
             tiles.append(tile_img)
             intrinsics_list.append(intrinsics)
             extrinsics_list.append(extrinsics)
+            
+            # Progress update every few tiles
+            if (i + 1) % 3 == 0 or (i + 1) == len(tiles_params):
+                log.info(f"Completed {i+1}/{len(tiles_params)} tiles")
         
         # Convert tiles to tensor format [N, H, W, C]
         tiles_tensor = torch.from_numpy(np.stack(tiles, axis=0)).to(device)
@@ -166,14 +172,31 @@ class MoGe_PerTile_Geometry:
                 
                 # Extract outputs
                 depth = output['depth']  # [H, W]
-                points = output['points']  # [3, H, W] 
+                points = output['points']  # Shape varies - could be [3, H, W] or [H, W, 3]
                 mask = output['mask']  # [H, W]
+                
+                # Normalize points shape to [3, H, W]
+                if points.dim() == 3:
+                    if points.shape[0] == 3:
+                        # Already in correct format [3, H, W]
+                        pass
+                    elif points.shape[2] == 3:
+                        # Convert from [H, W, 3] to [3, H, W]
+                        points = points.permute(2, 0, 1)
+                        log.info(f"Converted points from [H, W, 3] to [3, H, W]: {points.shape}")
+                    else:
+                        log.error(f"Unexpected points shape: {points.shape}")
                 
                 # Calculate normals from points if available
                 if 'normals' in output:
                     normals = output['normals']  # [3, H, W]
+                    # Also normalize normals shape if needed
+                    if normals.dim() == 3 and normals.shape[2] == 3 and normals.shape[0] != 3:
+                        normals = normals.permute(2, 0, 1)
+                        log.info(f"Converted normals from [H, W, 3] to [3, H, W]: {normals.shape}")
                 else:
                     # Compute normals from depth/points
+                    log.info(f"Computing normals from points, shape: {points.shape}")
                     normals = self._compute_normals_from_points(points)
                 
                 batch_depths.append(depth.cpu())
@@ -214,30 +237,75 @@ class MoGe_PerTile_Geometry:
     
     def _compute_normals_from_points(self, points: torch.Tensor) -> torch.Tensor:
         """Compute surface normals from 3D points using gradient method."""
-        # points: [3, H, W]
+        # points: [3, H, W] where first dim is [x, y, z]
+        
+        if points.shape[0] != 3:
+            log.error(f"Expected points shape [3, H, W], got {points.shape}")
+            # Return dummy normals as fallback
+            return torch.zeros_like(points)
+        
         C, H, W = points.shape
+        log.info(f"Computing normals from points with shape: {points.shape}")
         
-        # Compute gradients
-        grad_x = torch.zeros_like(points)
-        grad_y = torch.zeros_like(points)
+        # Extract xyz coordinates
+        x = points[0]  # [H, W]
+        y = points[1]  # [H, W] 
+        z = points[2]  # [H, W]
         
-        # Central differences
-        grad_x[:, :, 1:-1] = (points[:, :, 2:] - points[:, :, :-2]) / 2
-        grad_y[:, 1:-1, :] = (points[:, 2:, :] - points[:, :-2, :]) / 2
+        # Compute gradients for each coordinate
+        # X gradients
+        dx_du = torch.zeros_like(x)
+        dx_dv = torch.zeros_like(x)
+        dx_du[:, 1:-1] = (x[:, 2:] - x[:, :-2]) / 2
+        dx_dv[1:-1, :] = (x[2:, :] - x[:-2, :]) / 2
+        # Handle edges
+        dx_du[:, 0] = x[:, 1] - x[:, 0]
+        dx_du[:, -1] = x[:, -1] - x[:, -2]
+        dx_dv[0, :] = x[1, :] - x[0, :]
+        dx_dv[-1, :] = x[-1, :] - x[-2, :]
         
-        # Handle borders with forward/backward differences
-        grad_x[:, :, 0] = points[:, :, 1] - points[:, :, 0]
-        grad_x[:, :, -1] = points[:, :, -1] - points[:, :, -2]
-        grad_y[:, 0, :] = points[:, 1, :] - points[:, 0, :]
-        grad_y[:, -1, :] = points[:, -1, :] - points[:, -2, :]
+        # Y gradients  
+        dy_du = torch.zeros_like(y)
+        dy_dv = torch.zeros_like(y)
+        dy_du[:, 1:-1] = (y[:, 2:] - y[:, :-2]) / 2
+        dy_dv[1:-1, :] = (y[2:, :] - y[:-2, :]) / 2
+        # Handle edges
+        dy_du[:, 0] = y[:, 1] - y[:, 0]
+        dy_du[:, -1] = y[:, -1] - y[:, -2]
+        dy_dv[0, :] = y[1, :] - y[0, :]
+        dy_dv[-1, :] = y[-1, :] - y[-2, :]
         
-        # Cross product to get normals
-        normals = torch.cross(grad_x, grad_y, dim=0)
+        # Z gradients
+        dz_du = torch.zeros_like(z)
+        dz_dv = torch.zeros_like(z)
+        dz_du[:, 1:-1] = (z[:, 2:] - z[:, :-2]) / 2
+        dz_dv[1:-1, :] = (z[2:, :] - z[:-2, :]) / 2
+        # Handle edges
+        dz_du[:, 0] = z[:, 1] - z[:, 0]
+        dz_du[:, -1] = z[:, -1] - z[:, -2]
+        dz_dv[0, :] = z[1, :] - z[0, :]
+        dz_dv[-1, :] = z[-1, :] - z[-2, :]
+        
+        # Create tangent vectors
+        tangent_u = torch.stack([dx_du, dy_du, dz_du], dim=0)  # [3, H, W]
+        tangent_v = torch.stack([dx_dv, dy_dv, dz_dv], dim=0)  # [3, H, W]
+        
+        # Cross product: n = tu × tv
+        # For vectors a=[a0,a1,a2] and b=[b0,b1,b2], cross product is:
+        # [a1*b2-a2*b1, a2*b0-a0*b2, a0*b1-a1*b0]
+        normal_x = tangent_u[1] * tangent_v[2] - tangent_u[2] * tangent_v[1]  # [H, W]
+        normal_y = tangent_u[2] * tangent_v[0] - tangent_u[0] * tangent_v[2]  # [H, W]
+        normal_z = tangent_u[0] * tangent_v[1] - tangent_u[1] * tangent_v[0]  # [H, W]
+        
+        # Stack normals
+        normals = torch.stack([normal_x, normal_y, normal_z], dim=0)  # [3, H, W]
         
         # Normalize
-        norm = torch.norm(normals, dim=0, keepdim=True)
-        normals = normals / (norm + 1e-8)
+        norm = torch.sqrt(normals[0]**2 + normals[1]**2 + normals[2]**2).unsqueeze(0)  # [1, H, W]
+        norm = torch.clamp(norm, min=1e-8)  # Avoid division by zero
+        normals = normals / norm
         
+        log.info(f"Computed normals with shape: {normals.shape}")
         return normals
 
 
@@ -290,10 +358,27 @@ class Depth_Normal_Stitcher_360:
             if tile_id not in weights:
                 continue
                 
+            log.info(f"Stitching tile {i+1}/{len(tiles_params)}: {tile_id}")
+            
             weight_map = weights[tile_id]
             tile_depth = tile_depths[i].numpy()  # [H, W]
-            tile_normal = tile_normals[i].permute(1, 2, 0).numpy()  # [H, W, 3]
+            
+            # Clean depth data - remove NaNs and infinities
+            tile_depth = np.nan_to_num(tile_depth, nan=0.0, posinf=10.0, neginf=0.0)
+            
+            # Handle normals shape conversion safely
+            tile_normal_tensor = tile_normals[i]  # Should be [3, H, W]
+            if tile_normal_tensor.shape[0] == 3:
+                tile_normal = tile_normal_tensor.permute(1, 2, 0).numpy()  # [H, W, 3]
+            else:
+                log.error(f"Unexpected normals shape for tile {i}: {tile_normal_tensor.shape}")
+                tile_normal = np.zeros((tile_depth.shape[0], tile_depth.shape[1], 3), dtype=np.float32)
+            
+            # Clean normals data
+            tile_normal = np.nan_to_num(tile_normal, nan=0.0, posinf=1.0, neginf=-1.0)
+            
             tile_mask = tile_masks[i].numpy()  # [H, W]
+            tile_mask = np.nan_to_num(tile_mask, nan=0.0, posinf=1.0, neginf=0.0)
             
             # Reverse perspective projection to map tile back to ERP
             self._stitch_tile_to_erp(
@@ -325,11 +410,21 @@ class Depth_Normal_Stitcher_360:
         # Create perspective camera parameters
         focal_length = tile_res / (2 * np.tan(np.radians(fov_deg / 2)))
         
+        # Count pixels with significant weight to estimate progress
+        significant_pixels = np.sum(weight_map > 1e-6)
+        processed_pixels = 0
+        progress_interval = max(1, significant_pixels // 10)  # Update every 10%
+        
         # For each ERP pixel that has weight for this tile
         for v in range(erp_h):
             for u in range(erp_w):
                 if weight_map[v, u] <= 1e-6:
                     continue
+                
+                processed_pixels += 1
+                if processed_pixels % progress_interval == 0:
+                    progress_pct = (processed_pixels / significant_pixels) * 100
+                    log.info(f"  Stitching progress: {progress_pct:.1f}% ({processed_pixels}/{significant_pixels} pixels)")
                     
                 # Convert ERP pixel to 3D direction
                 x, y, z = SphericalProjection.erp_to_xyz(u, v, erp_w, erp_h)
@@ -340,45 +435,56 @@ class Depth_Normal_Stitcher_360:
                     world_point, center_lon, center_lat, focal_length, tile_res
                 )
                 
-                # Check if projection is within tile bounds
-                if 0 <= tile_u < tile_res and 0 <= tile_v < tile_res:
+                # Check if projection is within tile bounds with margin
+                if 1 <= tile_u < tile_res - 1 and 1 <= tile_v < tile_res - 1:
                     # Bilinear interpolation from tile
                     u0, v0 = int(tile_u), int(tile_v)
-                    u1, v1 = min(u0 + 1, tile_res - 1), min(v0 + 1, tile_res - 1)
+                    u1, v1 = u0 + 1, v0 + 1
+                    
+                    # Additional bounds check
+                    if u1 >= tile_res or v1 >= tile_res:
+                        continue
                     
                     wu = tile_u - u0
                     wv = tile_v - v0
                     
-                    # Interpolate depth
-                    interp_depth = (
-                        (1 - wu) * (1 - wv) * tile_depth[v0, u0] +
-                        wu * (1 - wv) * tile_depth[v0, u1] +
-                        (1 - wu) * wv * tile_depth[v1, u0] +
-                        wu * wv * tile_depth[v1, u1]
-                    )
-                    
-                    # Interpolate normals
-                    interp_normal = (
-                        (1 - wu) * (1 - wv) * tile_normal[v0, u0] +
-                        wu * (1 - wv) * tile_normal[v0, u1] +
-                        (1 - wu) * wv * tile_normal[v1, u0] +
-                        wu * wv * tile_normal[v1, u1]
-                    )
-                    
-                    # Interpolate mask
-                    interp_mask = (
-                        (1 - wu) * (1 - wv) * tile_mask[v0, u0] +
-                        wu * (1 - wv) * tile_mask[v0, u1] +
-                        (1 - wu) * wv * tile_mask[v1, u0] +
-                        wu * wv * tile_mask[v1, u1]
-                    )
-                    
-                    # Weighted accumulation
-                    weight = weight_map[v, u] * interp_mask
-                    
-                    erp_depth[v, u] += weight * interp_depth
-                    erp_normals[v, u] += weight * interp_normal
-                    erp_mask[v, u] += weight
+                    # Bounds check before accessing arrays
+                    if v1 < tile_depth.shape[0] and u1 < tile_depth.shape[1]:
+                        # Interpolate depth
+                        interp_depth = (
+                            (1 - wu) * (1 - wv) * tile_depth[v0, u0] +
+                            wu * (1 - wv) * tile_depth[v0, u1] +
+                            (1 - wu) * wv * tile_depth[v1, u0] +
+                            wu * wv * tile_depth[v1, u1]
+                        )
+                        
+                        # Interpolate normals (tile_normal is [H, W, 3])
+                        if v1 < tile_normal.shape[0] and u1 < tile_normal.shape[1]:
+                            interp_normal = (
+                                (1 - wu) * (1 - wv) * tile_normal[v0, u0, :] +
+                                wu * (1 - wv) * tile_normal[v0, u1, :] +
+                                (1 - wu) * wv * tile_normal[v1, u0, :] +
+                                wu * wv * tile_normal[v1, u1, :]
+                            )
+                        else:
+                            interp_normal = np.zeros(3, dtype=np.float32)
+                        
+                        # Interpolate mask
+                        interp_mask = (
+                            (1 - wu) * (1 - wv) * tile_mask[v0, u0] +
+                            wu * (1 - wv) * tile_mask[v0, u1] +
+                            (1 - wu) * wv * tile_mask[v1, u0] +
+                            wu * wv * tile_mask[v1, u1]
+                        )
+                        
+                        # Weighted accumulation with NaN checking
+                        weight = weight_map[v, u] * interp_mask
+                        if not np.isnan(weight) and not np.isinf(weight):
+                            if not np.isnan(interp_depth) and not np.isinf(interp_depth):
+                                erp_depth[v, u] += weight * interp_depth
+                            if not np.any(np.isnan(interp_normal)) and not np.any(np.isinf(interp_normal)):
+                                erp_normals[v, u] += weight * interp_normal
+                            erp_mask[v, u] += weight
     
     def _project_to_tile(self, world_point: np.ndarray, center_lon: float, center_lat: float,
                         focal_length: float, tile_res: int) -> Tuple[float, float]:

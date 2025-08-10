@@ -423,3 +423,16 @@ FodyWeavers.xsd
 /eval_dump
 /pretrained
 /.gradio
+
+# Additional exclusions for Python projects
+test_*.py
+test_*.png
+*.png
+
+# Documentation files  
+Claude.md
+*.md
+.claude/
+
+# Images folder
+Images/
