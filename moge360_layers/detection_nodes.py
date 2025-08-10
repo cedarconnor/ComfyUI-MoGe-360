@@ -112,15 +112,17 @@ class OWLViT_Detect_360:
     def _load_owlvit_model(self, model_size: str, device):
         """Load OWL-ViT model and processor."""
         try:
-            from transformers import OwlViTModel, OwlViTProcessor
+            # Use OWL-ViT v1 which has proper object detection
+            from transformers import OwlViTForObjectDetection, OwlViTProcessor
             
-            model_name = f"google/owlv2-{model_size}-patch16-ensemble"
+            # Use OWL-ViT v1 for actual object detection
+            model_name = f"google/owlvit-{model_size}-patch32"
             
             log.info(f"Loading OWL-ViT model: {model_name}")
             
-            # Load model
+            # Load model and processor
             processor = OwlViTProcessor.from_pretrained(model_name)
-            model = OwlViTModel.from_pretrained(model_name)
+            model = OwlViTForObjectDetection.from_pretrained(model_name)
             model.to(device)
             model.eval()
             
@@ -264,13 +266,23 @@ class OWLViT_Detect_360:
         with torch.no_grad():
             outputs = model(**inputs)
         
-        # Process outputs
+        # Process outputs for OWL-ViT v1
         target_sizes = torch.Tensor([pil_img.size[::-1]]).to(model.device)  # [H, W]
-        results = processor.post_process_object_detection(
-            outputs=outputs, 
-            target_sizes=target_sizes, 
-            threshold=confidence_threshold
-        )[0]  # First (and only) image
+        
+        # Use the newer API to avoid deprecation warning
+        try:
+            results = processor.post_process_grounded_object_detection(
+                outputs=outputs, 
+                target_sizes=target_sizes, 
+                threshold=confidence_threshold
+            )[0]  # First (and only) image
+        except AttributeError:
+            # Fallback to older API if newer one doesn't exist
+            results = processor.post_process_object_detection(
+                outputs=outputs, 
+                target_sizes=target_sizes, 
+                threshold=confidence_threshold
+            )[0]
         
         # Convert to our format
         detections = []
