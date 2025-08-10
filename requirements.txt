@@ -4,3 +4,6 @@ scipy
 numpy
 huggingface_hub
 opencv-python
+transformers
+onnxruntime-gpu
+torch-cluster

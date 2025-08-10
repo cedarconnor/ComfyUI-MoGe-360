@@ -203,12 +203,37 @@ class MoGeProcess:
     
 
 #endregion
+# Import new spherical nodes
+from .moge360_layers.spherical_nodes import (
+    Pano_TileSampler_Spherical,
+    MoGe_PerTile_Geometry,
+    Depth_Normal_Stitcher_360
+)
+from .moge360_layers.mesh_nodes import (
+    Layer_Mesher_Spherical,
+    Spherical_Mesh_Exporter
+)
+
 #region NodeMappings
 NODE_CLASS_MAPPINGS = {
     "DownloadAndLoadMoGeModel": DownloadAndLoadMoGeModel,
     "MoGeProcess": MoGeProcess,
+    # Spherical MoGe nodes
+    "Pano_TileSampler_Spherical": Pano_TileSampler_Spherical,
+    "MoGe_PerTile_Geometry": MoGe_PerTile_Geometry,
+    "Depth_Normal_Stitcher_360": Depth_Normal_Stitcher_360,
+    # Spherical Meshing nodes
+    "Layer_Mesher_Spherical": Layer_Mesher_Spherical,
+    "Spherical_Mesh_Exporter": Spherical_Mesh_Exporter,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "DownloadAndLoadMoGeModel": "(Down)load MoGe Model",
     "MoGeProcess": "MoGe Process",
+    # Spherical MoGe nodes
+    "Pano_TileSampler_Spherical": "360° Tile Sampler (Spherical)",
+    "MoGe_PerTile_Geometry": "MoGe Per-Tile Geometry",
+    "Depth_Normal_Stitcher_360": "360° Depth/Normal Stitcher",
+    # Spherical Meshing nodes
+    "Layer_Mesher_Spherical": "360° Layer Mesher",
+    "Spherical_Mesh_Exporter": "Spherical Mesh Exporter",
     }
