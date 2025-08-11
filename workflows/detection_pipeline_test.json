@@ -35,7 +35,7 @@
         {"name": "detection_summary", "type": "STRING", "links": [6]}
       ],
       "properties": {"Node name for S&R": "OWLViT_Detect_360"},
-      "widgets_values": ["mountain peak, rock formation, tree, large boulder, cliff, building", 0.2, 0.5, "circular_padding", 30, "base"],
+      "widgets_values": ["mountain peak, rock formation, tree, large boulder, cliff, building", 0.01, 0.5, "circular_padding", 30, "base"],
       "title": "🎯 OWL-ViT 360° Object Detector"
     },
     {
@@ -178,7 +178,7 @@
       "order": 10,
       "mode": 0,
       "properties": {"Node name for S&R": "Note"},
-      "widgets_values": ["🎯 DETECTION PIPELINE TEST WORKFLOW\n\nThis workflow focuses on testing the new object detection and masking capabilities:\n\n🔄 Pipeline Flow: Input Panorama → OWL-ViT Detection → Box-to-Mask Conversion → Sky/Background Split → Mask Combination\n\n⚙️ Tuning Tips:\n• Adjust 'confidence_threshold' (0.15-0.3) to control detection sensitivity\n• Try different text queries: 'rocky outcrop, cliff face, prominent peak, large tree, stone formation'\n• 'circular_padding' mode handles objects crossing the ±180° seam best\n• 'perspective_tiles' mode is more thorough but slower\n• Increase 'mask_expansion' (1.2-1.5) for larger object masks\n• Adjust 'edge_feather' (2-5) for smoother mask boundaries\n\n📊 Expected Results: Detection boxes → Clean object masks → Properly separated sky/background/objects ready for layered processing"],
+      "widgets_values": ["🎯 DETECTION PIPELINE TEST WORKFLOW\n\nThis workflow focuses on testing the new object detection and masking capabilities:\n\n🔄 Pipeline Flow: Input Panorama → OWL-ViT Detection → Box-to-Mask Conversion → Sky/Background Split → Mask Combination\n\n⚙️ Tuning Tips:\n• Adjust 'confidence_threshold' (0.01-0.1) to control detection sensitivity - OWL-ViT outputs low confidence scores\n• Try different text queries: 'rocky outcrop, cliff face, prominent peak, large tree, stone formation'\n• 'circular_padding' mode handles objects crossing the ±180° seam best\n• 'perspective_tiles' mode is more thorough but slower\n• Increase 'mask_expansion' (1.2-1.5) for larger object masks\n• Adjust 'edge_feather' (2-5) for smoother mask boundaries\n\n📊 Expected Results: Detection boxes → Clean object masks → Properly separated sky/background/objects ready for layered processing"],
       "title": "🎯 Detection Pipeline Info",
       "color": "#232",
       "bgcolor": "#353"

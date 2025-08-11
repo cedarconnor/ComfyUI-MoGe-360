@@ -113,7 +113,7 @@
         {"name": "detection_summary", "type": "STRING", "links": null}
       ],
       "properties": {"Node name for S&R": "OWLViT_Detect_360"},
-      "widgets_values": ["mountain peak, rock formation, tree, building, person", 0.25, 0.5, "circular_padding", 20, "base"],
+      "widgets_values": ["mountain peak, rock formation, tree, building, person", 0.01, 0.5, "circular_padding", 20, "base"],
       "title": "🎯 OWL-ViT 360° Object Detector"
     },
     {
@@ -344,7 +344,7 @@
       "order": 19,
       "mode": 0,
       "properties": {"Node name for S&R": "Note"},
-      "widgets_values": ["🎯 Object Detection Tips:\n\n• Use specific queries: 'mountain peak, rock formation, large boulder, tree, building'\n• Lower confidence (0.15-0.25) finds more objects\n• 'circular_padding' mode handles seam objects best\n• 'perspective_tiles' mode is most thorough but slower\n\n💡 For mountain panoramas, try:\n'rocky outcrop, cliff face, prominent peak, large tree, stone formation'"],
+      "widgets_values": ["🎯 Object Detection Tips:\n\n• Use specific queries: 'mountain peak, rock formation, large boulder, tree, building'\n• Lower confidence (0.01-0.1) finds more objects - OWL-ViT outputs low confidence scores\n• 'circular_padding' mode handles seam objects best\n• 'perspective_tiles' mode is most thorough but slower\n\n💡 For mountain panoramas, try:\n'rocky outcrop, cliff face, prominent peak, large tree, stone formation'"],
       "title": "🎯 Detection Tips",
       "color": "#324",
       "bgcolor": "#435"

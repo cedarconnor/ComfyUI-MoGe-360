@@ -28,7 +28,7 @@ class OWLViT_Detect_360:
                     "default": "mountain peak, rock formation, tree, building, person",
                     "multiline": True
                 }),
-                "confidence_threshold": ("FLOAT", {"default": 0.25, "min": 0.1, "max": 0.9, "step": 0.01}),
+                "confidence_threshold": ("FLOAT", {"default": 0.01, "min": 0.001, "max": 0.9, "step": 0.001}),
                 "nms_threshold": ("FLOAT", {"default": 0.5, "min": 0.1, "max": 0.9, "step": 0.01}),
                 "erp_mode": (["circular_padding", "perspective_tiles", "direct"], {"default": "circular_padding"}),
                 "max_detections": ("INT", {"default": 50, "min": 5, "max": 200, "step": 5}),
