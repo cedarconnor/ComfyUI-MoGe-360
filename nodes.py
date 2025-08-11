@@ -224,6 +224,10 @@ from .moge360_layers.matting_nodes import (
     Boxes_To_ZIM_Mattes,
     Detection_Mask_Combiner
 )
+from .moge360_layers.inpainting_nodes import (
+    Layer_Complete_360,
+    Layer_Alpha_Refiner
+)
 
 #region NodeMappings
 NODE_CLASS_MAPPINGS = {
@@ -244,6 +248,9 @@ NODE_CLASS_MAPPINGS = {
     # Matting nodes
     "Boxes_To_ZIM_Mattes": Boxes_To_ZIM_Mattes,
     "Detection_Mask_Combiner": Detection_Mask_Combiner,
+    # Inpainting nodes
+    "Layer_Complete_360": Layer_Complete_360,
+    "Layer_Alpha_Refiner": Layer_Alpha_Refiner,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "DownloadAndLoadMoGeModel": "(Down)load MoGe Model",
@@ -263,4 +270,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     # Matting nodes
     "Boxes_To_ZIM_Mattes": "Detection Boxes → Object Masks",
     "Detection_Mask_Combiner": "Combine Object/Sky/Background Masks",
+    # Inpainting nodes
+    "Layer_Complete_360": "360° Layer Completion (Inpainting)",
+    "Layer_Alpha_Refiner": "360° Alpha Mask Refiner",
     }
