@@ -220,6 +220,10 @@ from .moge360_layers.layer_nodes import (
 from .moge360_layers.detection_nodes import (
     OWLViT_Detect_360
 )
+from .moge360_layers.matting_nodes import (
+    Boxes_To_ZIM_Mattes,
+    Detection_Mask_Combiner
+)
 
 #region NodeMappings
 NODE_CLASS_MAPPINGS = {
@@ -237,6 +241,9 @@ NODE_CLASS_MAPPINGS = {
     "Layer_Builder_360": Layer_Builder_360,
     # Detection nodes
     "OWLViT_Detect_360": OWLViT_Detect_360,
+    # Matting nodes
+    "Boxes_To_ZIM_Mattes": Boxes_To_ZIM_Mattes,
+    "Detection_Mask_Combiner": Detection_Mask_Combiner,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "DownloadAndLoadMoGeModel": "(Down)load MoGe Model",
@@ -253,4 +260,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "Layer_Builder_360": "360° Layer Builder",
     # Detection nodes
     "OWLViT_Detect_360": "OWL-ViT 360° Object Detector",
+    # Matting nodes
+    "Boxes_To_ZIM_Mattes": "Detection Boxes → Object Masks",
+    "Detection_Mask_Combiner": "Combine Object/Sky/Background Masks",
     }
