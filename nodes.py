@@ -228,6 +228,10 @@ from .moge360_layers.inpainting_nodes import (
     Layer_Complete_360,
     Layer_Alpha_Refiner
 )
+from .moge360_layers.depth_alignment_nodes import (
+    Depth_Align_Layers,
+    Layer_Depth_Visualizer
+)
 
 #region NodeMappings
 NODE_CLASS_MAPPINGS = {
@@ -251,6 +255,9 @@ NODE_CLASS_MAPPINGS = {
     # Inpainting nodes
     "Layer_Complete_360": Layer_Complete_360,
     "Layer_Alpha_Refiner": Layer_Alpha_Refiner,
+    # Depth Alignment nodes
+    "Depth_Align_Layers": Depth_Align_Layers,
+    "Layer_Depth_Visualizer": Layer_Depth_Visualizer,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "DownloadAndLoadMoGeModel": "(Down)load MoGe Model",
@@ -273,4 +280,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     # Inpainting nodes
     "Layer_Complete_360": "360° Layer Completion (Inpainting)",
     "Layer_Alpha_Refiner": "360° Alpha Mask Refiner",
+    # Depth Alignment nodes
+    "Depth_Align_Layers": "🔧 360° Depth Alignment",
+    "Layer_Depth_Visualizer": "👁️ Layer Depth Visualizer",
     }

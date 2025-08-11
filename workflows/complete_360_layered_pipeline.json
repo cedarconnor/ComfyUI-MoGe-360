@@ -1,6 +1,6 @@
 {
-  "last_node_id": 25,
-  "last_link_id": 35,
+  "last_node_id": 26,
+  "last_link_id": 37,
   "nodes": [
     {
       "id": 1,
@@ -214,15 +214,35 @@
       "title": "✨ 360° Alpha Refiner"
     },
     {
-      "id": 12,
-      "type": "Layer_Mesher_Spherical",
-      "pos": [1800, 400],
-      "size": {"0": 315, "1": 286},
+      "id": 26,
+      "type": "Depth_Align_Layers",
+      "pos": [1800, 650],
+      "size": {"0": 315, "1": 226},
       "flags": {},
       "order": 11,
       "mode": 0,
       "inputs": [
-        {"name": "layer_stack", "type": "LAYER_STACK", "link": 18}
+        {"name": "layer_stack", "type": "LAYER_STACK", "link": 18},
+        {"name": "reference_depth", "type": "IMAGE", "link": 36}
+      ],
+      "outputs": [
+        {"name": "aligned_layers", "type": "LAYER_STACK", "links": [37], "slot_index": 0},
+        {"name": "alignment_report", "type": "STRING", "links": null}
+      ],
+      "properties": {"Node name for S&R": "Depth_Align_Layers"},
+      "widgets_values": ["overlap_based", 0.05, 100, 0.8, true],
+      "title": "🔧 360° Depth Alignment"
+    },
+    {
+      "id": 12,
+      "type": "Layer_Mesher_Spherical",
+      "pos": [2150, 650],
+      "size": {"0": 315, "1": 286},
+      "flags": {},
+      "order": 12,
+      "mode": 0,
+      "inputs": [
+        {"name": "layer_stack", "type": "LAYER_STACK", "link": 37}
       ],
       "outputs": [
         {"name": "spherical_mesh", "type": "TRIMESH", "links": [19], "slot_index": 0},
@@ -236,10 +256,10 @@
     {
       "id": 13,
       "type": "Spherical_Mesh_Exporter",
-      "pos": [2150, 400],
+      "pos": [2500, 650],
       "size": {"0": 315, "1": 146},
       "flags": {},
-      "order": 12,
+      "order": 13,
       "mode": 0,
       "inputs": [
         {"name": "mesh", "type": "TRIMESH", "link": 19}
@@ -257,7 +277,7 @@
       "pos": [400, 950],
       "size": {"0": 315, "1": 246},
       "flags": {},
-      "order": 13,
+      "order": 16,
       "mode": 0,
       "inputs": [
         {"name": "images", "type": "IMAGE", "link": 6}
@@ -271,7 +291,7 @@
       "pos": [750, 950],
       "size": {"0": 315, "1": 246},
       "flags": {},
-      "order": 14,
+      "order": 16,
       "mode": 0,
       "inputs": [
         {"name": "images", "type": "IMAGE", "link": 11}
@@ -285,7 +305,7 @@
       "pos": [1100, 950],
       "size": {"0": 315, "1": 246},
       "flags": {},
-      "order": 15,
+      "order": 16,
       "mode": 0,
       "inputs": [
         {"name": "images", "type": "IMAGE", "link": 12}
@@ -398,7 +418,9 @@
     [15, 8, 1, 9, 3, "IMAGE"],
     [16, 9, 0, 10, 0, "LAYER_STACK"],
     [17, 10, 0, 11, 0, "LAYER_STACK"],
-    [18, 11, 0, 12, 0, "LAYER_STACK"],
+    [18, 11, 0, 26, 0, "LAYER_STACK"],
+    [36, 5, 0, 26, 1, "IMAGE"],
+    [37, 26, 0, 12, 0, "LAYER_STACK"],
     [19, 12, 0, 13, 0, "TRIMESH"],
     [19, 13, 0, 17, 0, "STRING"]
   ],
