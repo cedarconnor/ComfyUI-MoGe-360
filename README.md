@@ -26,6 +26,11 @@ Transform 360° panoramas into layered 3D worlds with automatic object detection
 - **Layer Completion**: ERP-safe inpainting to fill occluded regions
 - **Alpha Refinement**: Edge smoothing and mask cleanup
 
+### ✅ Recent Fixes
+- OWL‑ViT NMS now uses `[x,y,w,h]` box format to prevent OpenCV NMS errors.
+- Detection preview clamps box coordinates to image bounds to avoid cv2 assertions.
+- Spherical mesher depth normalization gains a robust fallback so terrain isn’t lost (sky‑only meshes fixed).
+
 ## 🚀 Quick Start
 
 For the fastest experience, use the **Pano360_To_Geometry_Complete** node:
@@ -89,6 +94,8 @@ Three complete workflows are provided in the `workflows/` folder:
 
 OWL‑ViT produces low confidence scores (typically 0.01–0.15). The default confidence threshold is **0.01**. Adjust between **0.001–0.1** for sensitivity control. Scores above 0.05 are relatively confident.
 
+Note: NMS requires boxes in `[x, y, w, h]` (OpenCV `cv2.dnn.NMSBoxes`). This repo converts automatically; no action needed.
+
 ### 🧩 All‑in‑One Node
 
 - Node: `Pano360_To_Geometry_Complete` under category `MoGe360/Complete`
@@ -150,6 +157,16 @@ For local testing, prefer the embedded ComfyUI Python at `C:\\ComfyUI\\.venv\\Sc
 - **Circular padding** for detection across longitude seams
 - **Weighted blending** in tile overlap regions
 - **Mask wrapping** for objects crossing ±180°
+
+## 🧯 Troubleshooting
+- Geometry only shows sky:
+  - Set `enable_layering=False` in `Pano360_To_Geometry_Complete` to isolate core spherical MoGe.
+  - Use Balanced preset defaults: grid `6×3`, FOV `100°`, overlap `15°`, tile size `768`, output height `1024`.
+  - The mesher now includes a robust depth normalization fallback; update and retry.
+- OpenCV errors during detection/matting:
+  - Ensure you run with ComfyUI’s embedded Python: `C:\\ComfyUI\\.venv\\Scripts\\python.exe`.
+  - The detector clamps visualization boxes and uses correct NMS format; update and retry.
+  - If errors persist, switch `erp_mode` to `direct` to bisect circular padding issues, then back to `circular_padding`.
 
 ## 🎥 Example Results
 
