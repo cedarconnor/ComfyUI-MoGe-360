@@ -274,7 +274,7 @@ class Pano360_To_Geometry_Complete:
             
             # Create process preview
             process_preview = self._create_process_preview(
-                erp_image, tiles, erp_depth, erp_normals, layer_stack, device
+                erp_image, tiles, erp_depth, erp_normals, layer_stack, device, diagnostics=enable_depth_diagnostics
             )
             
             # Final summary
@@ -724,7 +724,7 @@ class Pano360_To_Geometry_Complete:
     
     def _create_process_preview(self, erp_image: torch.Tensor, tiles: torch.Tensor, 
                               erp_depth: torch.Tensor, erp_normals: torch.Tensor, 
-                              layer_stack: Optional[Dict], device) -> torch.Tensor:
+                              layer_stack: Optional[Dict], device, diagnostics: bool = False) -> torch.Tensor:
         """Create a preview image showing the processing pipeline stages."""
         
         try:
@@ -758,8 +758,14 @@ class Pano360_To_Geometry_Complete:
                     normals_resized = cv2.resize(normals_norm, (preview_w, preview_h))
                     preview[preview_h:, :preview_w] = normals_resized
             
-            # Bottom-right: Layer info or tiles preview
-            if layer_stack is not None:
+            # Bottom-right: Layer info or histogram/tiles preview
+            if diagnostics and erp_depth is not None:
+                # Render histogram of depth distribution
+                depth_np = erp_depth[0, :, :, 0].cpu().numpy()
+                valid_mask = depth_np > 0
+                hist_img = self._make_hist_image(depth_np, valid_mask, (preview_h, preview_w))
+                preview[preview_h:, preview_w:] = hist_img
+            elif layer_stack is not None:
                 # Show layer count as text overlay
                 info_img = np.zeros((preview_h, preview_w, 3), dtype=np.float32)
                 layer_count = len(layer_stack.get('layers', []))
@@ -813,3 +819,36 @@ class Pano360_To_Geometry_Complete:
             f"percentiles: {pct_str}",
         ]
         return "\n".join(lines)
+
+    def _make_hist_image(self, depth: np.ndarray, valid_mask: np.ndarray, size_hw: tuple) -> np.ndarray:
+        """Create a histogram image (H,W,3 float32) for the preview panel."""
+        h, w = size_hw
+        img = np.zeros((h, w, 3), dtype=np.float32)
+        if valid_mask is None or not valid_mask.any():
+            # Red band indicates no valid depth
+            img[:, :, 0] = 0.3
+            return img
+        vals = depth[valid_mask]
+        # Robust range
+        p1, p99 = np.percentile(vals, [1, 99])
+        if not np.isfinite(p1) or not np.isfinite(p99) or p99 <= p1:
+            p1 = float(vals.min())
+            p99 = float(vals.max())
+            if p99 <= p1:
+                p99 = p1 + 1.0
+        bins = np.linspace(p1, p99, w + 1)
+        hist, _ = np.histogram(np.clip(vals, p1, p99), bins=bins)
+        hist = hist.astype(np.float32)
+        if hist.max() > 0:
+            hist /= hist.max()
+        # Draw bars in blue channel
+        for x in range(w):
+            bar_h = int(hist[x] * (h - 1))
+            if bar_h > 0:
+                img[h - bar_h : h, x, 2] = 0.9
+        # Valid ratio stripe at left
+        vr = float(valid_mask.mean())
+        stripe_h = int(vr * h)
+        if stripe_h > 0:
+            img[0:stripe_h, 0:min(6, w), 1] = 0.6
+        return img
