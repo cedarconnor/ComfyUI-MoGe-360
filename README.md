@@ -163,6 +163,7 @@ For local testing, prefer the embedded ComfyUI Python at `C:\\ComfyUI\\.venv\\Sc
   - Set `enable_layering=False` in `Pano360_To_Geometry_Complete` to isolate core spherical MoGe.
   - Use Balanced preset defaults: grid `6×3`, FOV `100°`, overlap `15°`, tile size `768`, output height `1024`.
   - The mesher now includes a robust depth normalization fallback; update and retry.
+  - Drop `🧪 Depth Map Diagnostics` after the stitcher to inspect valid ratio and percentiles. Valid ratio should be well above 0 for terrain scenes.
 - OpenCV errors during detection/matting:
   - Ensure you run with ComfyUI’s embedded Python: `C:\\ComfyUI\\.venv\\Scripts\\python.exe`.
   - The detector clamps visualization boxes and uses correct NMS format; update and retry.

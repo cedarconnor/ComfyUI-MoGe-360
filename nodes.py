@@ -235,6 +235,9 @@ from .moge360_layers.depth_alignment_nodes import (
 from .moge360_layers.complete_node import (
     Pano360_To_Geometry_Complete
 )
+from .moge360_layers.debug_nodes import (
+    Depth_Map_Diagnostics,
+)
 
 #region NodeMappings
 NODE_CLASS_MAPPINGS = {
@@ -263,6 +266,8 @@ NODE_CLASS_MAPPINGS = {
     "Layer_Depth_Visualizer": Layer_Depth_Visualizer,
     # Complete Pipeline node
     "Pano360_To_Geometry_Complete": Pano360_To_Geometry_Complete,
+    # Debug
+    "Depth_Map_Diagnostics": Depth_Map_Diagnostics,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "DownloadAndLoadMoGeModel": "(Down)load MoGe Model",
@@ -290,4 +295,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "Layer_Depth_Visualizer": "👁️ Layer Depth Visualizer",
     # Complete Pipeline node
     "Pano360_To_Geometry_Complete": "🌐 360° Panorama → 3D Geometry (Complete)",
+    # Debug
+    "Depth_Map_Diagnostics": "🧪 Depth Map Diagnostics",
     }
