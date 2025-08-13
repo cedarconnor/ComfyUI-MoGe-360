@@ -98,11 +98,6 @@ class Pano360_To_Geometry_Complete:
                     "default": 0, "min": 0, "max": 4096, "step": 64,
                     "tooltip": "Override output ERP height. 0 uses preset value."
                 }),
-                # Debug/diagnostics
-                "enable_depth_diagnostics": ("BOOLEAN", {
-                    "default": False,
-                    "tooltip": "If enabled, computes depth statistics after spherical stitching and appends them to the progress report."
-                }),
                 # Optional export
                 "export_format": (["none", "glb", "ply"], {
                     "default": "none",
@@ -111,6 +106,11 @@ class Pano360_To_Geometry_Complete:
                 "export_prefix": ("STRING", {
                     "default": "3D/MoGe360_Complete",
                     "tooltip": "Filename prefix for exported meshes under ComfyUI's output directory."
+                }),
+                # Debug/diagnostics (appended to end for backward compatibility)
+                "enable_depth_diagnostics": ("BOOLEAN", {
+                    "default": False,
+                    "tooltip": "If enabled, computes depth statistics after spherical stitching and appends them to the progress report."
                 }),
             }
         }
@@ -156,6 +156,18 @@ class Pano360_To_Geometry_Complete:
         if not valid_ok:
             progress_log.append(f"Warning: {validation_msg}")
         
+        # Backward compatibility: handle saved workflows where widget order shifted
+        try:
+            if export_format not in {"none", "glb", "ply"}:
+                # Likely the old value for export_prefix ended up here
+                progress_log.append(
+                    f"Note: corrected export params (received export_format='{export_format}'); treating it as export_prefix"
+                )
+                export_prefix = str(export_format)
+                export_format = "none"
+        except Exception:
+            pass
+
         
         # Configure settings based on quality preset
         settings = self._configure_quality_preset(quality_preset, mesh_resolution)
