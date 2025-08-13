@@ -98,6 +98,11 @@ class Pano360_To_Geometry_Complete:
                     "default": 0, "min": 0, "max": 4096, "step": 64,
                     "tooltip": "Override output ERP height. 0 uses preset value."
                 }),
+                # Debug/diagnostics
+                "enable_depth_diagnostics": ("BOOLEAN", {
+                    "default": False,
+                    "tooltip": "If enabled, computes depth statistics after spherical stitching and appends them to the progress report."
+                }),
                 # Optional export
                 "export_format": (["none", "glb", "ply"], {
                     "default": "none",
@@ -131,6 +136,7 @@ class Pano360_To_Geometry_Complete:
                                 remove_edge_artifacts: bool = True, smooth_normals: bool = True,
                                 grid_yaw_override: int = 0, grid_pitch_override: int = 0,
                                 tile_resolution_override: int = 0, stitcher_height_override: int = 0,
+                                enable_depth_diagnostics: bool = False,
                                 export_format: str = "none", export_prefix: str = "3D/MoGe360_Complete"):
         
         device = mm.get_torch_device()
@@ -180,6 +186,17 @@ class Pano360_To_Geometry_Complete:
                 raise RuntimeError("Spherical MoGe processing failed")
             
             tiles, tile_params, erp_depth, erp_normals = spherical_results
+
+            # Optional depth diagnostics (append to progress log)
+            try:
+                if enable_depth_diagnostics and erp_depth is not None:
+                    diag_summary = self._compute_depth_diagnostics_summary(erp_depth)
+                    progress_log.append("Depth diagnostics:")
+                    for line in diag_summary.split('\n'):
+                        progress_log.append(f"  {line}")
+                    progress_log.append("")
+            except Exception as e:
+                progress_log.append(f"Depth diagnostics failed: {e}")
             stage1_time = time.time() - stage1_start
             progress_log.append(f"Stage 1 completed in {stage1_time:.1f}s")
             progress_log.append("")
@@ -755,3 +772,32 @@ class Pano360_To_Geometry_Complete:
             # Return simple gradient as fallback
             fallback = torch.zeros((1, 512, 1024, 3), device=device, dtype=torch.float32)
             return fallback
+
+    def _compute_depth_diagnostics_summary(self, erp_depth: torch.Tensor) -> str:
+        """Compute compact depth stats similar to the debug node and return as multiline string."""
+        try:
+            d = erp_depth[0, :, :, 0].detach().cpu().float().numpy()
+        except Exception as e:
+            return f"Invalid depth tensor: {getattr(erp_depth, 'shape', None)} ({e})"
+
+        valid = d > 0
+        valid_ratio = float(valid.mean()) if valid.size > 0 else 0.0
+
+        if valid.any():
+            vals = d[valid]
+            dmin = float(vals.min())
+            dmax = float(vals.max())
+            dmed = float(np.median(vals))
+            p = np.percentile(vals, [1, 5, 25, 50, 75, 95, 99]).astype(float)
+            pct_labels = ["p01", "p05", "p25", "p50", "p75", "p95", "p99"]
+            pct_str = ", ".join([f"{n}:{v:.6g}" for n, v in zip(pct_labels, p)])
+        else:
+            dmin = dmax = dmed = 0.0
+            pct_str = "p01:0, p05:0, p25:0, p50:0, p75:0, p95:0, p99:0"
+
+        lines = [
+            f"valid_ratio: {valid_ratio:.3%}",
+            f"min/median/max: {dmin:.6g} / {dmed:.6g} / {dmax:.6g}",
+            f"percentiles: {pct_str}",
+        ]
+        return "\n".join(lines)
