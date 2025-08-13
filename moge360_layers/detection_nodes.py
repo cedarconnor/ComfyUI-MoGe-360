@@ -23,27 +23,52 @@ class OWLViT_Detect_360:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "erp_image": ("IMAGE",),  # [1, H, W, 3]
+                "erp_image": ("IMAGE", {
+                    "tooltip": "Input equirectangular panorama image in 2:1 aspect ratio. Must be in standard ERP format for proper spherical object detection."
+                }),
                 "text_queries": ("STRING", {
                     "default": "mountain peak, rock formation, tree, building, person",
-                    "multiline": True
+                    "multiline": True,
+                    "tooltip": "Comma-separated list of objects to detect using open-vocabulary OWL-ViT model. Can detect any object describable in text, not limited to predefined classes."
                 }),
-                "confidence_threshold": ("FLOAT", {"default": 0.01, "min": 0.001, "max": 0.9, "step": 0.001}),
-                "nms_threshold": ("FLOAT", {"default": 0.5, "min": 0.1, "max": 0.9, "step": 0.01}),
-                "erp_mode": (["circular_padding", "perspective_tiles", "direct"], {"default": "circular_padding"}),
-                "max_detections": ("INT", {"default": 50, "min": 5, "max": 200, "step": 5}),
-                "model_size": (["base", "large"], {"default": "base"}),
+                "confidence_threshold": ("FLOAT", {
+                    "default": 0.01, "min": 0.001, "max": 0.9, "step": 0.001,
+                    "tooltip": "Minimum confidence score for detections. OWL-ViT produces low scores (0.01-0.15), so use low thresholds. Higher values = fewer but more confident detections."
+                }),
+                "nms_threshold": ("FLOAT", {
+                    "default": 0.5, "min": 0.1, "max": 0.9, "step": 0.01,
+                    "tooltip": "Non-Maximum Suppression threshold for removing overlapping detections. Lower values = fewer overlaps but may merge nearby objects. 0.5 is a good balance."
+                }),
+                "erp_mode": (["circular_padding", "perspective_tiles", "direct"], {
+                    "default": "circular_padding",
+                    "tooltip": "Detection method: circular_padding handles ERP seams best, perspective_tiles reduces distortion, direct is fastest but may miss seam objects."
+                }),
+                "max_detections": ("INT", {
+                    "default": 50, "min": 5, "max": 200, "step": 5,
+                    "tooltip": "Maximum number of detections to return. Higher values may include more false positives. Adjust based on scene complexity and processing time constraints."
+                }),
+                "model_size": (["base", "large"], {
+                    "default": "base",
+                    "tooltip": "OWL-ViT model size. 'base' is faster and uses less memory, 'large' may have better accuracy but requires more GPU memory and processing time."
+                }),
             },
             "optional": {
-                "detection_hint_mask": ("IMAGE",),  # Optional region hint
+                "detection_hint_mask": ("IMAGE", {
+                    "tooltip": "Optional mask to focus detection on specific regions. White areas indicate where to look for objects, black areas are ignored. Useful for excluding sky or known empty areas."
+                }),
             }
         }
 
     RETURN_TYPES = ("DETECTION_BOXES", "IMAGE", "STRING")
     RETURN_NAMES = ("detection_boxes", "detection_preview", "detection_summary")
+    OUTPUT_TOOLTIPS = (
+        "Structured detection data containing bounding boxes, confidence scores, labels, and metadata. Connect to Boxes_To_ZIM_Mattes for mask conversion.",
+        "Preview image showing detected objects with colored bounding boxes and confidence scores. Useful for validating detection quality and adjusting parameters.",
+        "Text summary of detection results including object counts, average confidence scores, and detected labels. Helpful for debugging and workflow verification."
+    )
     FUNCTION = "detect_objects"
     CATEGORY = "MoGe360/Detection"
-    DESCRIPTION = "Detect objects in ERP panorama using OWL-ViT open-vocabulary detection"
+    DESCRIPTION = "Detect objects in equirectangular panoramas using OWL-ViT open-vocabulary detection. Handles ERP seam continuity and supports custom text queries for detecting any describable object."
 
     def detect_objects(self, erp_image: torch.Tensor, text_queries: str, confidence_threshold: float,
                       nms_threshold: float, erp_mode: str, max_detections: int, model_size: str,
@@ -138,74 +163,49 @@ class OWLViT_Detect_360:
         """Detect objects using circular padding to handle ERP seams."""
         
         H, W = img.shape[:2]
-        
+
         # Add circular padding (duplicate left/right edges)
         padding_width = W // 4  # 25% padding on each side
-        
+
         # Create padded image
         left_pad = img[:, -padding_width:]  # Right edge -> left padding
         right_pad = img[:, :padding_width]  # Left edge -> right padding
         padded_img = np.concatenate([left_pad, img, right_pad], axis=1)
-        
+
         log.info(f"Created padded image: {padded_img.shape} (padding: {padding_width}px)")
-        
+
         # Run detection on padded image
         padded_detections = self._detect_direct(
             padded_img, model, processor, queries, confidence_threshold, nms_threshold, max_detections
         )
-        
+
         # Adjust detection coordinates back to original image
         detections = []
-        padded_width = padded_img.shape[1]
-        
         for det in padded_detections:
-            # Adjust box coordinates
             x1, y1, x2, y2 = det['box']
-            
-            # Convert from padded coordinates to original coordinates
+            # Shift back from padded coordinates
             x1_orig = x1 - padding_width
             x2_orig = x2 - padding_width
-            
-            # Handle boxes that span the seam
-            if x1_orig < 0 and x2_orig < 0:
-                # Box entirely in left padding - wrap to right side
-                det['box'] = [x1_orig + W, y1, x2_orig + W, y2]
-                detections.append(det)
-            elif x1_orig >= W and x2_orig >= W:
-                # Box entirely in right padding - wrap to left side  
-                det['box'] = [x1_orig - W, y1, x2_orig - W, y2]
-                detections.append(det)
-            elif x1_orig < 0 < x2_orig or x1_orig < W < x2_orig:
-                # Box spans seam - create two boxes
-                if x1_orig < 0:
-                    # Split box at seam
-                    detections.append({
-                        **det,
-                        'box': [x1_orig + W, y1, W, y2],
-                        'seam_box': True
-                    })
-                    detections.append({
-                        **det, 
-                        'box': [0, y1, x2_orig, y2],
-                        'seam_box': True
-                    })
-                else:
-                    # Box spans right edge
-                    detections.append({
-                        **det,
-                        'box': [x1_orig, y1, W, y2],
-                        'seam_box': True
-                    })
-                    detections.append({
-                        **det,
-                        'box': [0, y1, x2_orig - W, y2], 
-                        'seam_box': True
-                    })
-            elif 0 <= x1_orig < W and 0 <= x2_orig < W:
-                # Box in original image area
-                det['box'] = [x1_orig, y1, x2_orig, y2]
-                detections.append(det)
-        
+
+            # Cases: entirely wrapped left, entirely wrapped right, spans seam, or within bounds
+            if x2_orig <= 0:
+                # Entirely in left padding -> wrap right
+                detections.append({**det, 'box': [x1_orig + W, y1, x2_orig + W, y2], 'seam_box': True})
+            elif x1_orig >= W:
+                # Entirely in right padding -> wrap left
+                detections.append({**det, 'box': [x1_orig - W, y1, x2_orig - W, y2], 'seam_box': True})
+            elif x1_orig < 0 < x2_orig:
+                # Crosses left seam: split into two boxes
+                detections.append({**det, 'box': [x1_orig + W, y1, W, y2], 'seam_box': True})
+                detections.append({**det, 'box': [0, y1, x2_orig, y2], 'seam_box': True})
+            elif x1_orig < W < x2_orig:
+                # Crosses right seam: split into two boxes
+                detections.append({**det, 'box': [x1_orig, y1, W, y2], 'seam_box': True})
+                detections.append({**det, 'box': [0, y1, x2_orig - W, y2], 'seam_box': True})
+            else:
+                # Within original image
+                detections.append({**det, 'box': [x1_orig, y1, x2_orig, y2]})
+
         return detections
     
     def _detect_with_perspective_tiles(self, img: np.ndarray, model, processor, queries: List[str],

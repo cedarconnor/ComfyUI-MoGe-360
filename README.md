@@ -4,6 +4,13 @@ Transform 360° panoramas into layered 3D worlds with automatic object detection
 
 ## ✨ Features
 
+### 🌐 All-in-One Complete Node
+- **Pano360_To_Geometry_Complete**: Single node that takes a 360° panorama and outputs a complete 3D mesh
+- **Quality Presets**: Fast, Balanced, High, and Ultra quality modes for different use cases
+- **Optional Layering**: Enable/disable object detection and layer separation
+- **Auto-Detection**: Open-vocabulary object detection with customizable queries
+- **Material Presets**: Matte, metallic, glass material options for different scene types
+
 ### 🌐 Core Spherical MoGe Pipeline
 - **360° Tile Sampler (Spherical)**: True spherical projection for equirectangular panoramas
 - **MoGe Per-Tile Geometry**: Depth and normal estimation with proper camera intrinsics  
@@ -18,6 +25,17 @@ Transform 360° panoramas into layered 3D worlds with automatic object detection
 - **360° Layer Builder**: Multi-layer composition with proper depth ordering
 - **Layer Completion**: ERP-safe inpainting to fill occluded regions
 - **Alpha Refinement**: Edge smoothing and mask cleanup
+
+## 🚀 Quick Start
+
+For the fastest experience, use the **Pano360_To_Geometry_Complete** node:
+
+1. Load a 360° panorama image (2:1 aspect ratio)
+2. Load a MoGe model using the "Load MoGe Model" node
+3. Connect both to the complete node
+4. Set quality preset (start with "balanced")
+5. Enable layering for more sophisticated results (optional)
+6. Execute to get a complete 3D mesh with textures
 
 ## Installation
 
@@ -42,9 +60,7 @@ Place these in `ComfyUI/models/MoGe/`:
 - Automatically downloaded when using the "Load MoGe Model" node
 
 #### OWL-ViT Models (For layered processing)
-Place these in `ComfyUI/models/owlvit/`:
-- Download from: https://huggingface.co/google/owlv2-base-patch16-ensemble
-- Required files: `pytorch_model.bin`, `config.json`, `preprocessor_config.json`
+No manual setup needed. The node automatically downloads OWL‑ViT v1 (`google/owlvit-base-patch32`) via Hugging Face on first use. A local transformers cache under `models/transformers_cache/` will be used.
 
 #### ZIM Matting Models (For layered processing)
 Place these in `ComfyUI/models/zim/`:
@@ -59,7 +75,7 @@ ComfyUI/
 │   └── transformers_cache/ # Auto-downloaded OWL-ViT and other HF models
 ```
 
-**Note**: OWL-ViT models are now automatically downloaded from Hugging Face when first used.
+**Note**: OWL-ViT models are automatically downloaded from Hugging Face when first used.
 
 ## 🚀 Usage
 
@@ -71,12 +87,19 @@ Three complete workflows are provided in the `workflows/` folder:
 
 ### 🎯 Important: OWL-ViT Detection Settings
 
-**Fixed Issue**: OWL-ViT returns very low confidence scores (0.01-0.15) which were causing "no detections" with the previous default threshold of 0.25.
+OWL‑ViT produces low confidence scores (typically 0.01–0.15). The default confidence threshold is **0.01**. Adjust between **0.001–0.1** for sensitivity control. Scores above 0.05 are relatively confident.
 
-✅ **Solution**: 
-- Default confidence threshold is now **0.01** (was 0.25)
-- Adjust between **0.001-0.1** for sensitivity control
-- Scores above 0.05 are high-confidence detections
+### 🧩 All‑in‑One Node
+
+- Node: `Pano360_To_Geometry_Complete` under category `MoGe360/Complete`
+- Inputs: ERP image, pre‑loaded MoGe model, quality preset, mesh resolution, layering toggle, and optional detection/layer params
+- Outputs: TRIMESH mesh, depth/normal visualizations, process preview, progress report
+- Presets: `fast`, `balanced`, `high`, `ultra` configure tile grid, MoGe levels, and stitching defaults
+
+#### Advanced Options
+- `layer_separation_mode`: `auto` | `sky_only` | `objects_only` (couples with layer selection during meshing)
+- Grid overrides: `grid_yaw_override`, `grid_pitch_override`, `tile_resolution_override`, `stitcher_height_override`
+- Export: `export_format` = none|glb|ply, with `export_prefix` path under ComfyUI output
 
 ### Basic Spherical MoGe Workflow
 
@@ -113,6 +136,10 @@ Three complete workflows are provided in the `workflows/` folder:
 - Proper equirectangular (2:1) panorama handling
 - ERP seam continuity across ±180° longitude boundary
 - Pole-aware sampling and stitching
+
+### ComfyUI Embedded Python
+
+For local testing, prefer the embedded ComfyUI Python at `C:\\ComfyUI\\.venv\\Scripts\\python.exe` to ensure dependency alignment with ComfyUI.
 
 ### Memory Requirements
 - **Minimum**: 6GB VRAM (3×2 tiles, 512px)

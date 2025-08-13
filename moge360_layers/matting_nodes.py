@@ -23,24 +23,49 @@ class Boxes_To_ZIM_Mattes:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "erp_image": ("IMAGE",),  # [1, H, W, 3]
-                "detection_boxes": ("DETECTION_BOXES",),
-                "matting_method": (["zim", "grabcut", "simple_mask"], {"default": "grabcut"}),
-                "mask_expansion": ("FLOAT", {"default": 1.2, "min": 1.0, "max": 2.0, "step": 0.1}),
-                "edge_feather": ("FLOAT", {"default": 2.0, "min": 0.0, "max": 10.0, "step": 0.5}),
-                "min_mask_size": ("INT", {"default": 100, "min": 10, "max": 1000, "step": 10}),
+                "erp_image": ("IMAGE", {
+                    "tooltip": "Input equirectangular panorama image matching the detection input. Used as source for mask generation and refinement algorithms."
+                }),
+                "detection_boxes": ("DETECTION_BOXES", {
+                    "tooltip": "Detection results from OWLViT_Detect_360 containing bounding boxes, confidence scores, and labels. Each box will be converted to a high-quality mask."
+                }),
+                "matting_method": (["zim", "grabcut", "simple_mask"], {
+                    "default": "grabcut",
+                    "tooltip": "Mask generation method: 'grabcut' uses OpenCV for intelligent segmentation, 'simple_mask' creates basic rectangular masks, 'zim' planned for future ZIM matting."
+                }),
+                "mask_expansion": ("FLOAT", {
+                    "default": 1.2, "min": 1.0, "max": 2.0, "step": 0.1,
+                    "tooltip": "Expand bounding boxes before mask generation. 1.2 = 20% larger. Helps capture complete objects that detection boxes might not fully encompass."
+                }),
+                "edge_feather": ("FLOAT", {
+                    "default": 2.0, "min": 0.0, "max": 10.0, "step": 0.5,
+                    "tooltip": "Smooth feathering amount for mask edges as percentage of image size. Higher values create softer transitions but may blur fine details. 0 = hard edges."
+                }),
+                "min_mask_size": ("INT", {
+                    "default": 100, "min": 10, "max": 1000, "step": 10,
+                    "tooltip": "Minimum pixel count for valid masks. Smaller masks are filtered out to remove noise detections. Adjust based on image resolution and object sizes."
+                }),
             },
             "optional": {
-                "trimap_erosion": ("INT", {"default": 5, "min": 1, "max": 20, "step": 1}),
-                "trimap_dilation": ("INT", {"default": 10, "min": 1, "max": 30, "step": 1}),
+                "trimap_erosion": ("INT", {
+                    "default": 5, "min": 1, "max": 20, "step": 1,
+                    "tooltip": "Erosion iterations for trimap generation (future ZIM support). Controls how much to shrink the foreground region for better matting accuracy."
+                }),
+                "trimap_dilation": ("INT", {
+                    "default": 10, "min": 1, "max": 30, "step": 1,
+                    "tooltip": "Dilation iterations for trimap generation (future ZIM support). Controls how much to expand the uncertain region for better edge refinement."
+                }),
             }
         }
 
-    RETURN_TYPES = ("IMAGE",)  # Stack of object masks
+    RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("object_masks",)
+    OUTPUT_TOOLTIPS = (
+        "Stack of object masks corresponding to detected objects. Each mask is a grayscale image where white areas indicate the object and black areas are background. ERP seam-safe.",
+    )
     FUNCTION = "create_masks"
     CATEGORY = "MoGe360/Detection"
-    DESCRIPTION = "Convert detection boxes to high-quality object masks with ERP-aware processing"
+    DESCRIPTION = "Convert detection bounding boxes to high-quality object masks using GrabCut segmentation or simple expansion. Handles ERP seam continuity and provides mask refinement options."
 
     def create_masks(self, erp_image: torch.Tensor, detection_boxes: Dict, matting_method: str,
                     mask_expansion: float, edge_feather: float, min_mask_size: int,
@@ -241,19 +266,36 @@ class Detection_Mask_Combiner:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "object_masks": ("IMAGE",),  # From Boxes_To_ZIM_Mattes
-                "sky_mask": ("IMAGE",),      # From Sky_Background_Splitter
-                "background_mask": ("IMAGE",),  # From Sky_Background_Splitter
-                "combination_method": (["priority", "alpha_blend", "max_blend"], {"default": "priority"}),
-                "object_priority": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.1}),
+                "object_masks": ("IMAGE", {
+                    "tooltip": "Stack of object masks from Boxes_To_ZIM_Mattes. These masks will be combined and used to modify sky and background masks for proper layer separation."
+                }),
+                "sky_mask": ("IMAGE", {
+                    "tooltip": "Sky mask from Sky_Background_Splitter. Object areas will be removed from this mask to prevent sky/object overlap in the final layering."
+                }),
+                "background_mask": ("IMAGE", {
+                    "tooltip": "Background mask from Sky_Background_Splitter. Object areas will be removed from this mask to create clean background layer without objects."
+                }),
+                "combination_method": (["priority", "alpha_blend", "max_blend"], {
+                    "default": "priority",
+                    "tooltip": "Method for combining masks: 'priority' gives objects precedence, 'alpha_blend' creates soft transitions, 'max_blend' preserves maximum values."
+                }),
+                "object_priority": ("FLOAT", {
+                    "default": 1.0, "min": 0.0, "max": 2.0, "step": 0.1,
+                    "tooltip": "Strength of object mask influence when removing from sky/background. 1.0 = full removal, 0.5 = partial removal, 2.0 = extended removal area."
+                }),
             }
         }
 
     RETURN_TYPES = ("IMAGE", "IMAGE", "IMAGE")
     RETURN_NAMES = ("combined_sky", "combined_background", "combined_objects")
+    OUTPUT_TOOLTIPS = (
+        "Sky mask with object areas removed. Clean sky layer without object contamination, ready for separate sky processing and depth assignment.",
+        "Background mask with object areas removed. Clean background layer containing terrain and static elements, excluding sky and detected objects.",
+        "Combined object masks from all detections. Single mask containing all detected objects, useful for layer building and depth processing."
+    )
     FUNCTION = "combine_masks"
     CATEGORY = "MoGe360/Detection"
-    DESCRIPTION = "Combine detected object masks with sky/background separation"
+    DESCRIPTION = "Combine multiple object masks with sky and background masks to create clean, non-overlapping layer masks. Ensures proper layer separation for 3D reconstruction."
 
     def combine_masks(self, object_masks: torch.Tensor, sky_mask: torch.Tensor, 
                      background_mask: torch.Tensor, combination_method: str, object_priority: float):

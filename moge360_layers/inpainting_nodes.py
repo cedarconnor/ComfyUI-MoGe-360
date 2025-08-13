@@ -23,24 +23,48 @@ class Layer_Complete_360:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "layer_stack": ("LAYER_STACK",),
-                "inpaint_method": (["opencv_telea", "opencv_ns", "edge_extend", "patch_match"], {"default": "opencv_telea"}),
-                "inpaint_radius": ("INT", {"default": 5, "min": 1, "max": 20, "step": 1}),
-                "blend_strength": ("FLOAT", {"default": 0.8, "min": 0.0, "max": 1.0, "step": 0.1}),
-                "seam_protection": ("BOOLEAN", {"default": True}),
-                "quality_mode": (["fast", "balanced", "high"], {"default": "balanced"}),
+                "layer_stack": ("LAYER_STACK", {
+                    "tooltip": "Layer stack from Layer_Builder_360 containing structured layers with RGB, alpha, and depth data. Each layer will be completed by filling occluded regions."
+                }),
+                "inpaint_method": (["opencv_telea", "opencv_ns", "edge_extend", "patch_match"], {
+                    "default": "opencv_telea",
+                    "tooltip": "Inpainting algorithm: 'opencv_telea' is fast and good for small holes, 'opencv_ns' preserves structure better, 'edge_extend' is simple, 'patch_match' is highest quality but slower."
+                }),
+                "inpaint_radius": ("INT", {
+                    "default": 5, "min": 1, "max": 20, "step": 1,
+                    "tooltip": "Radius for inpainting algorithms in pixels. Larger radius considers more context but takes longer. 5 is good for small gaps, 10+ for larger holes."
+                }),
+                "blend_strength": ("FLOAT", {
+                    "default": 0.8, "min": 0.0, "max": 1.0, "step": 0.1,
+                    "tooltip": "Blending strength between original and inpainted content. 1.0 = full inpainted content, 0.5 = blend 50/50, 0.0 = keep original (no inpainting)."
+                }),
+                "seam_protection": ("BOOLEAN", {
+                    "default": True,
+                    "tooltip": "Use circular padding to ensure ERP seam continuity during inpainting. Prevents visible seams at ±180° longitude boundary. Recommended for 360° content."
+                }),
+                "quality_mode": (["fast", "balanced", "high"], {
+                    "default": "balanced",
+                    "tooltip": "Processing quality vs speed tradeoff. 'fast' uses smaller contexts, 'balanced' is recommended, 'high' uses larger contexts and multiple passes."
+                }),
             },
             "optional": {
-                "custom_inpaint_mask": ("IMAGE",),  # Optional manual inpaint regions
-                "background_reference": ("IMAGE",),  # Reference for inpainting context
+                "custom_inpaint_mask": ("IMAGE", {
+                    "tooltip": "Optional manual mask indicating additional regions to inpaint. White areas will be inpainted regardless of layer alpha. Useful for fixing specific artifacts."
+                }),
+                "background_reference": ("IMAGE", {
+                    "tooltip": "Optional reference image to guide inpainting context. Can help maintain consistent style and content when filling large regions."
+                }),
             }
         }
 
     RETURN_TYPES = ("LAYER_STACK",)
     RETURN_NAMES = ("completed_layers",)
+    OUTPUT_TOOLTIPS = (
+        "Layer stack with all holes and occluded regions filled using inpainting. Each layer now has complete RGB data behind objects, ready for alpha refinement and depth alignment.",
+    )
     FUNCTION = "complete_layers"
     CATEGORY = "MoGe360/Layers"
-    DESCRIPTION = "Complete layers by inpainting occluded regions with ERP seam continuity"
+    DESCRIPTION = "Complete layer RGB data by intelligently inpainting occluded regions behind objects. Maintains ERP seam continuity and provides different inpainting strategies per layer type."
 
     def complete_layers(self, layer_stack: Dict, inpaint_method: str, inpaint_radius: int, 
                        blend_strength: float, seam_protection: bool, quality_mode: str,
@@ -323,20 +347,40 @@ class Layer_Alpha_Refiner:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "layer_stack": ("LAYER_STACK",),
-                "smoothing_method": (["gaussian", "bilateral", "edge_preserving"], {"default": "bilateral"}),
-                "smoothing_strength": ("FLOAT", {"default": 2.0, "min": 0.0, "max": 10.0, "step": 0.1}),
-                "edge_threshold": ("FLOAT", {"default": 0.1, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "cleanup_small_regions": ("BOOLEAN", {"default": True}),
-                "min_region_size": ("INT", {"default": 50, "min": 10, "max": 500, "step": 10}),
+                "layer_stack": ("LAYER_STACK", {
+                    "tooltip": "Completed layer stack from Layer_Complete_360 with inpainted RGB data. Alpha masks will be refined for smoother edges and better quality."
+                }),
+                "smoothing_method": (["gaussian", "bilateral", "edge_preserving"], {
+                    "default": "bilateral",
+                    "tooltip": "Smoothing algorithm: 'gaussian' is fast but uniform, 'bilateral' preserves edges while smoothing, 'edge_preserving' uses RGB gradients for intelligent smoothing."
+                }),
+                "smoothing_strength": ("FLOAT", {
+                    "default": 2.0, "min": 0.0, "max": 10.0, "step": 0.1,
+                    "tooltip": "Strength of alpha mask smoothing. Higher values create softer edges but may blur fine details. 2.0 is good for most cases, 5.0+ for very soft masks."
+                }),
+                "edge_threshold": ("FLOAT", {
+                    "default": 0.1, "min": 0.0, "max": 1.0, "step": 0.01,
+                    "tooltip": "Threshold for edge detection in edge-preserving mode. Lower values detect more edges, higher values focus on strong edges only. Unused for other methods."
+                }),
+                "cleanup_small_regions": ("BOOLEAN", {
+                    "default": True,
+                    "tooltip": "Remove small disconnected regions from alpha masks. Helps eliminate noise and artifacts from detection/matting but may remove small intended features."
+                }),
+                "min_region_size": ("INT", {
+                    "default": 50, "min": 10, "max": 500, "step": 10,
+                    "tooltip": "Minimum size in pixels for regions to keep during cleanup. Smaller regions are removed as noise. Adjust based on image resolution and smallest objects to preserve."
+                }),
             }
         }
 
     RETURN_TYPES = ("LAYER_STACK",)
     RETURN_NAMES = ("refined_layers",)
+    OUTPUT_TOOLTIPS = (
+        "Layer stack with refined alpha masks having smoother edges and cleaned boundaries. RGB data is updated to match refined alpha channels, ready for depth alignment.",
+    )
     FUNCTION = "refine_alphas"
     CATEGORY = "MoGe360/Layers"
-    DESCRIPTION = "Refine layer alpha masks with ERP-aware smoothing"
+    DESCRIPTION = "Refine layer alpha masks using intelligent smoothing algorithms. Removes noise, smooths edges, and maintains ERP seam continuity while preserving important edge details."
 
     def refine_alphas(self, layer_stack: Dict, smoothing_method: str, smoothing_strength: float,
                      edge_threshold: float, cleanup_small_regions: bool, min_region_size: int):

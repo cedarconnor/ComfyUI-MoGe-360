@@ -24,26 +24,57 @@ class Depth_Align_Layers:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "layer_stack": ("LAYER_STACK",),     # Input layers to align
-                "reference_depth": ("IMAGE",),       # [1, H, W, 3] - Reference ERP depth map
-                "alignment_method": (["overlap_based", "statistical", "reference_plane", "manual"], {"default": "overlap_based"}),
-                "depth_tolerance": ("FLOAT", {"default": 0.05, "min": 0.01, "max": 0.2, "step": 0.01}),
-                "min_overlap_pixels": ("INT", {"default": 100, "min": 10, "max": 1000, "step": 10}),
-                "alignment_strength": ("FLOAT", {"default": 0.8, "min": 0.1, "max": 1.0, "step": 0.1}),
-                "preserve_relative_order": ("BOOLEAN", {"default": True}),
+                "layer_stack": ("LAYER_STACK", {
+                    "tooltip": "Layer stack from Layer_Alpha_Refiner containing refined layers with inconsistent depth scales. Each layer's depth will be aligned for proper 3D reconstruction."
+                }),
+                "reference_depth": ("IMAGE", {
+                    "tooltip": "Reference depth map from Depth_Normal_Stitcher_360 providing ground truth depth scale. Used as baseline for aligning all layer depths consistently."
+                }),
+                "alignment_method": (["overlap_based", "statistical", "reference_plane", "manual"], {
+                    "default": "overlap_based",
+                    "tooltip": "Alignment algorithm: 'overlap_based' uses overlapping regions (best), 'statistical' matches depth distributions, 'reference_plane' uses fixed rules, 'manual' uses user values."
+                }),
+                "depth_tolerance": ("FLOAT", {
+                    "default": 0.05, "min": 0.01, "max": 0.2, "step": 0.01,
+                    "tooltip": "Acceptable depth variation tolerance as fraction. 0.05 = 5% tolerance. Lower values enforce stricter alignment but may over-correct natural depth variation."
+                }),
+                "min_overlap_pixels": ("INT", {
+                    "default": 100, "min": 10, "max": 1000, "step": 10,
+                    "tooltip": "Minimum overlapping pixels required for overlap-based alignment. If insufficient overlap, falls back to statistical alignment. Adjust for image resolution."
+                }),
+                "alignment_strength": ("FLOAT", {
+                    "default": 0.8, "min": 0.1, "max": 1.0, "step": 0.1,
+                    "tooltip": "Strength of depth alignment correction. 1.0 = full alignment, 0.5 = blend 50/50 with original, 0.1 = minimal correction. Lower values preserve original depth character."
+                }),
+                "preserve_relative_order": ("BOOLEAN", {
+                    "default": True,
+                    "tooltip": "Maintain relative depth ordering between layers (sky furthest, objects closest). Prevents depth inversions that would break 3D reconstruction."
+                }),
             },
             "optional": {
-                "manual_sky_depth": ("FLOAT", {"default": 1000.0, "min": 10.0, "max": 10000.0, "step": 10.0}),
-                "manual_bg_scale": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 5.0, "step": 0.1}),
-                "depth_hints": ("IMAGE",),  # Optional depth hints for alignment
+                "manual_sky_depth": ("FLOAT", {
+                    "default": 1000.0, "min": 10.0, "max": 10000.0, "step": 10.0,
+                    "tooltip": "Fixed depth value for sky layer in manual mode. Should be much larger than scene depth to place sky at infinity. Only used with manual alignment method."
+                }),
+                "manual_bg_scale": ("FLOAT", {
+                    "default": 1.0, "min": 0.1, "max": 5.0, "step": 0.1,
+                    "tooltip": "Scale factor for background depth in manual mode. 1.0 = original depth, >1.0 = further away, <1.0 = closer. Only used with manual alignment method."
+                }),
+                "depth_hints": ("IMAGE", {
+                    "tooltip": "Optional depth hints to guide alignment process. Can provide additional constraints for better alignment in challenging regions."
+                }),
             }
         }
 
     RETURN_TYPES = ("LAYER_STACK", "STRING")
     RETURN_NAMES = ("aligned_layers", "alignment_report")
+    OUTPUT_TOOLTIPS = (
+        "Layer stack with aligned depth maps ensuring consistent scale and proper ordering across all layers. Ready for spherical mesh generation with correct parallax.",
+        "Detailed report of alignment process including scale factors, overlap statistics, and depth consistency analysis. Useful for debugging and quality verification."
+    )
     FUNCTION = "align_layer_depths"
     CATEGORY = "MoGe360/Layers"
-    DESCRIPTION = "Align depth maps across layers for consistent 3D reconstruction"
+    DESCRIPTION = "Align depth maps across all layers using intelligent algorithms to ensure consistent depth scale and proper layer ordering. Prevents depth conflicts in 3D reconstruction."
 
     def align_layer_depths(self, layer_stack: Dict, reference_depth: torch.Tensor, 
                           alignment_method: str, depth_tolerance: float, min_overlap_pixels: int,
@@ -430,17 +461,28 @@ class Layer_Depth_Visualizer:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "layer_stack": ("LAYER_STACK",),
-                "visualization_mode": (["depth_maps", "cross_section", "3d_preview", "statistics"], {"default": "depth_maps"}),
-                "colormap": (["viridis", "plasma", "turbo", "gray"], {"default": "viridis"}),
+                "layer_stack": ("LAYER_STACK", {
+                    "tooltip": "Layer stack with aligned depths from Depth_Align_Layers. Depth information will be visualized to verify alignment quality and layer relationships."
+                }),
+                "visualization_mode": (["depth_maps", "cross_section", "3d_preview", "statistics"], {
+                    "default": "depth_maps",
+                    "tooltip": "Visualization type: 'depth_maps' shows side-by-side depth images, 'cross_section' shows depth profiles, '3d_preview' renders perspective view, 'statistics' shows depth analysis."
+                }),
+                "colormap": (["viridis", "plasma", "turbo", "gray"], {
+                    "default": "viridis",
+                    "tooltip": "Color mapping for depth visualization: 'viridis' is perceptually uniform, 'plasma' has high contrast, 'turbo' is rainbow-like, 'gray' is monochrome."
+                }),
             }
         }
 
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("depth_visualization",)
+    OUTPUT_TOOLTIPS = (
+        "Visualization image showing depth alignment results across all layers. Helps verify alignment quality, identify issues, and understand layer depth relationships.",
+    )
     FUNCTION = "visualize_depth_alignment"
     CATEGORY = "MoGe360/Layers"
-    DESCRIPTION = "Visualize depth alignment results across layers"
+    DESCRIPTION = "Generate visual analysis of depth alignment results showing depth maps, cross-sections, and statistics to verify alignment quality and debug issues."
 
     def visualize_depth_alignment(self, layer_stack: Dict, visualization_mode: str, colormap: str):
         

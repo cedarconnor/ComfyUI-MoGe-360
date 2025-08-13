@@ -23,23 +23,47 @@ class Sky_Background_Splitter:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "erp_image": ("IMAGE",),  # [1, H, W, 3]
-                "method": (["gradient", "blue_sky", "horizon_line", "auto"], {"default": "auto"}),
-                "sky_threshold": ("FLOAT", {"default": 0.6, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "horizon_latitude": ("FLOAT", {"default": 0.0, "min": -30.0, "max": 30.0, "step": 1.0}),
-                "feather_amount": ("FLOAT", {"default": 0.05, "min": 0.0, "max": 0.2, "step": 0.01}),
-                "min_sky_height": ("FLOAT", {"default": 0.3, "min": 0.1, "max": 0.8, "step": 0.01}),
+                "erp_image": ("IMAGE", {
+                    "tooltip": "Input equirectangular panorama image to analyze for sky/background separation. Must be in standard ERP format for proper latitude-based analysis."
+                }),
+                "method": (["gradient", "blue_sky", "horizon_line", "auto"], {
+                    "default": "auto",
+                    "tooltip": "Sky detection method: 'auto' combines multiple approaches, 'gradient' uses brightness gradients, 'blue_sky' detects blue colors, 'horizon_line' uses latitude."
+                }),
+                "sky_threshold": ("FLOAT", {
+                    "default": 0.6, "min": 0.0, "max": 1.0, "step": 0.01,
+                    "tooltip": "Confidence threshold for sky detection. Higher values = more conservative sky detection. Lower values include more ambiguous regions as sky."
+                }),
+                "horizon_latitude": ("FLOAT", {
+                    "default": 0.0, "min": -30.0, "max": 30.0, "step": 1.0,
+                    "tooltip": "Horizon line latitude in degrees. 0° = equator, positive = above equator. Helps guide sky detection by defining expected horizon position."
+                }),
+                "feather_amount": ("FLOAT", {
+                    "default": 0.05, "min": 0.0, "max": 0.2, "step": 0.01,
+                    "tooltip": "Edge feathering amount as percentage of image size. Creates smooth transitions between sky and background. 0.05 = 5% feathering for soft boundaries."
+                }),
+                "min_sky_height": ("FLOAT", {
+                    "default": 0.3, "min": 0.1, "max": 0.8, "step": 0.01,
+                    "tooltip": "Minimum sky coverage as fraction of image height. Ensures reasonable sky detection in challenging scenes. 0.3 = at least 30% of image height."
+                }),
             },
             "optional": {
-                "sky_mask_hint": ("IMAGE",),  # Optional manual sky mask
+                "sky_mask_hint": ("IMAGE", {
+                    "tooltip": "Optional manual sky mask hint to guide automatic detection. White areas suggest sky, black areas suggest non-sky. Blended with automatic results."
+                }),
             }
         }
 
     RETURN_TYPES = ("IMAGE", "IMAGE", "IMAGE")
     RETURN_NAMES = ("sky_mask", "background_mask", "combined_preview")
+    OUTPUT_TOOLTIPS = (
+        "Sky mask where white pixels indicate sky regions. Use for sky layer creation and to exclude sky from object detection in lower regions.",
+        "Background mask where white pixels indicate non-sky regions (ground, buildings, etc.). Inverse of sky mask, used for background layer processing.",
+        "Preview visualization showing sky (blue tint) and background (green tint) separation. Useful for validating detection quality and adjusting parameters."
+    )
     FUNCTION = "split_sky_background"
     CATEGORY = "MoGe360/Layers"
-    DESCRIPTION = "Split ERP panorama into sky and background/foreground layers"
+    DESCRIPTION = "Automatically split equirectangular panorama into sky and background regions using intelligent detection algorithms. Handles ERP distortions and provides smooth layer transitions."
 
     def split_sky_background(self, erp_image: torch.Tensor, method: str, sky_threshold: float,
                            horizon_latitude: float, feather_amount: float, min_sky_height: float,
@@ -272,25 +296,50 @@ class Layer_Builder_360:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "erp_image": ("IMAGE",),     # [1, H, W, 3]
-                "erp_depth": ("IMAGE",),     # [1, H, W, 3] (depth in all channels)
-                "sky_mask": ("IMAGE",),      # [1, H, W, 3] 
-                "background_mask": ("IMAGE",), # [1, H, W, 3]
-                "sky_depth_value": ("FLOAT", {"default": 1000.0, "min": 100.0, "max": 10000.0, "step": 10.0}),
-                "depth_scale_bg": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 5.0, "step": 0.1}),
-                "layer_priority": (["sky_back", "back_sky"], {"default": "sky_back"}),
-                "edge_cleanup": ("BOOLEAN", {"default": True}),
+                "erp_image": ("IMAGE", {
+                    "tooltip": "Source equirectangular panorama image containing RGB data for all layers. Must match dimensions of masks and depth maps."
+                }),
+                "erp_depth": ("IMAGE", {
+                    "tooltip": "Depth map from Depth_Normal_Stitcher_360 containing metric depth values. Used for background and object layer depth assignment."
+                }),
+                "sky_mask": ("IMAGE", {
+                    "tooltip": "Sky mask from Sky_Background_Splitter indicating sky regions. Sky pixels get fixed far depth value for proper 3D placement."
+                }),
+                "background_mask": ("IMAGE", {
+                    "tooltip": "Background mask from Sky_Background_Splitter indicating non-sky, non-object regions. Uses scaled MoGe depth for terrain reconstruction."
+                }),
+                "sky_depth_value": ("FLOAT", {
+                    "default": 1000.0, "min": 100.0, "max": 10000.0, "step": 10.0,
+                    "tooltip": "Fixed depth value for sky pixels. Should be much larger than scene depth to place sky at infinity. 1000 units works for most scenes."
+                }),
+                "depth_scale_bg": ("FLOAT", {
+                    "default": 1.0, "min": 0.1, "max": 5.0, "step": 0.1,
+                    "tooltip": "Scale factor for background depth. Adjusts MoGe depth values for background layer. 1.0 = original depth, >1.0 = further away, <1.0 = closer."
+                }),
+                "layer_priority": (["sky_back", "back_sky"], {
+                    "default": "sky_back",
+                    "tooltip": "Layer ordering: 'sky_back' puts sky behind background (standard), 'back_sky' puts background behind sky (unusual but sometimes needed)."
+                }),
+                "edge_cleanup": ("BOOLEAN", {
+                    "default": True,
+                    "tooltip": "Apply morphological operations to clean up layer edges. Removes small artifacts and smooths boundaries but may slightly blur fine details."
+                }),
             },
             "optional": {
-                "object_masks": ("IMAGE",),   # Optional object masks [N, H, W, 3]
+                "object_masks": ("IMAGE", {
+                    "tooltip": "Optional object masks from Detection_Mask_Combiner. Each mask becomes a separate foreground layer with individual depth and alpha processing."
+                }),
             }
         }
 
     RETURN_TYPES = ("LAYER_STACK",)
     RETURN_NAMES = ("layer_stack",)
+    OUTPUT_TOOLTIPS = (
+        "Structured layer stack containing sky, background, and optional object layers. Each layer has RGB, alpha, depth, and metadata. Ready for layer completion and 3D processing.",
+    )
     FUNCTION = "build_layers"
     CATEGORY = "MoGe360/Layers"
-    DESCRIPTION = "Build structured layers from masks with proper depth assignment"
+    DESCRIPTION = "Build structured layer stack from masks and depth data. Creates individual layers for sky, background, and objects with proper depth assignment and ERP seam continuity."
 
     def build_layers(self, erp_image: torch.Tensor, erp_depth: torch.Tensor, 
                     sky_mask: torch.Tensor, background_mask: torch.Tensor,

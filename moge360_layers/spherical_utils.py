@@ -257,13 +257,13 @@ class SphericalProjection:
                     pixel_lon = math.degrees(math.atan2(z, x))
                     pixel_lat = math.degrees(math.asin(y))
                     
-                    # Calculate angular distance from tile center
-                    # Use great circle distance
+                    # Calculate angular distance from tile center using great-circle distance
                     center_lon_rad = math.radians(center_lon)
                     center_lat_rad = math.radians(center_lat)
-                    pixel_lon_rad = math.radians(pixel_lon)
-                    pixel_lat_rad = math.radians(pixel_lat)
-                    
+                    # Derive pixel longitude/latitude directly from xyz
+                    pixel_lon_rad = math.atan2(z, x)
+                    pixel_lat_rad = math.asin(y)
+
                     cos_dist = (math.sin(center_lat_rad) * math.sin(pixel_lat_rad) +
                               math.cos(center_lat_rad) * math.cos(pixel_lat_rad) *
                               math.cos(abs(pixel_lon_rad - center_lon_rad)))
