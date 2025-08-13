@@ -307,30 +307,39 @@ class OWLViT_Detect_360:
         return detections
     
     def _apply_nms(self, detections: List[Dict], threshold: float) -> List[Dict]:
-        """Apply Non-Maximum Suppression."""
+        """Apply Non-Maximum Suppression using cv2.dnn.NMSBoxes.
+        OpenCV expects boxes in [x, y, w, h] format.
+        """
         if len(detections) <= 1:
             return detections
-        
-        # Convert to format for NMS
-        boxes = np.array([det['box'] for det in detections])
-        scores = np.array([det['confidence'] for det in detections])
-        
-        # Convert to x1, y1, x2, y2 format and apply NMS
+
+        # Build boxes in [x, y, w, h]
+        boxes_wh = []
+        scores = []
+        for det in detections:
+            x1, y1, x2, y2 = det['box']
+            # Ensure valid ordering and clip negatives
+            x1, y1, x2, y2 = float(x1), float(y1), float(x2), float(y2)
+            if x2 < x1:
+                x1, x2 = x2, x1
+            if y2 < y1:
+                y1, y2 = y2, y1
+            w = max(0.0, x2 - x1)
+            h = max(0.0, y2 - y1)
+            boxes_wh.append([x1, y1, w, h])
+            scores.append(float(det['confidence']))
+
         try:
-            indices = cv2.dnn.NMSBoxes(
-                boxes.tolist(), 
-                scores.tolist(), 
-                score_threshold=0.0,  # Already filtered by confidence
-                nms_threshold=threshold
-            )
-            
-            if len(indices) > 0:
-                indices = indices.flatten()
-                return [detections[i] for i in indices]
+            idxs = cv2.dnn.NMSBoxes(boxes_wh, scores, score_threshold=0.0, nms_threshold=threshold)
+            if isinstance(idxs, (list, tuple)):
+                keep = [int(i) for i in idxs]
+            elif hasattr(idxs, "flatten"):
+                keep = [int(i) for i in idxs.flatten().tolist()]
             else:
-                return detections
-        except:
-            # Fallback - return all detections
+                keep = []
+            return [detections[i] for i in keep] if keep else detections
+        except Exception as e:
+            log.warning(f"NMS failed, returning all detections. Error: {e}")
             return detections
     
     def _project_detection_to_erp(self, detection: Dict, tile_params: Dict, intrinsics: np.ndarray,
@@ -471,6 +480,11 @@ class OWLViT_Detect_360:
         # Draw detection boxes
         for i, det in enumerate(detections):
             x1, y1, x2, y2 = det['box']
+            # Clip to image bounds to prevent OpenCV assertions
+            x1 = int(max(0, min(W - 1, x1)))
+            x2 = int(max(0, min(W - 1, x2)))
+            y1 = int(max(0, min(H - 1, y1)))
+            y2 = int(max(0, min(H - 1, y2)))
             confidence = det['confidence']
             label = det['label']
             

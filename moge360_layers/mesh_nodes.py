@@ -380,6 +380,7 @@ class Layer_Mesher_Spherical:
         depth_processed = depth.copy()
         
         # Apply depth scaling and handle invalid values
+        # Treat small positive depths as valid as well to avoid losing terrain
         valid_mask = depth_processed > 0
         if valid_mask.sum() > 0:
             valid_depths = depth_processed[valid_mask]
@@ -448,8 +449,16 @@ class Layer_Mesher_Spherical:
             else:
                 # Fallback to full range normalization
                 log.info(f"Normalizing full depth range from [{depth_min:.3f}, {depth_max:.3f}] to [1, 10]")
-                depth_processed[valid_mask] = 1 + 9 * (valid_depths - depth_min) / (depth_max - depth_min)
+                depth_processed[valid_mask] = 1 + 9 * (valid_depths - depth_min) / (depth_max - depth_min + 1e-6)
             
+            # If foreground extremely sparse after normalization, re-normalize using robust percentiles
+            fg_fraction = ((depth_processed > 0) & (depth_processed < np.percentile(depth_processed[valid_mask], 85))).sum() / valid_mask.sum()
+            if fg_fraction < 0.05:
+                p1, p99 = np.percentile(valid_depths, 1), np.percentile(valid_depths, 99)
+                span = max(1e-6, p99 - p1)
+                depth_processed[valid_mask] = 1 + 9 * (np.clip(valid_depths, p1, p99) - p1) / span
+                log.info(f"Re-normalized depths using robust percentiles p1={p1:.3f}, p99={p99:.3f} to preserve foreground")
+
             # Apply global scaling to make mesh more reasonable size
             depth_processed = depth_processed * 5.0  # Scale factor for better viewing
         
