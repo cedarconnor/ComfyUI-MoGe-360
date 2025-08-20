@@ -1,5 +1,4 @@
 import numpy as np
-import matplotlib
 
 
 def colorize_depth(depth: np.ndarray, mask: np.ndarray = None, normalize: bool = True, cmap: str = 'Spectral') -> np.ndarray:
@@ -19,6 +18,11 @@ def colorize_depth(depth: np.ndarray, mask: np.ndarray = None, normalize: bool =
 
 
 def colorize_depth_affine(depth: np.ndarray, mask: np.ndarray = None, cmap: str = 'Spectral') -> np.ndarray:
+    try:
+        import matplotlib
+    except ImportError:
+        raise ImportError("matplotlib is required for colorized depth visualization. Install with: pip install matplotlib")
+    
     if mask is not None:
         depth = np.where(mask, depth, np.nan)
 
@@ -30,6 +34,11 @@ def colorize_depth_affine(depth: np.ndarray, mask: np.ndarray = None, cmap: str 
 
 
 def colorize_disparity(disparity: np.ndarray, mask: np.ndarray = None, normalize: bool = True, cmap: str = 'Spectral') -> np.ndarray:
+    try:
+        import matplotlib
+    except ImportError:
+        raise ImportError("matplotlib is required for colorized disparity visualization. Install with: pip install matplotlib")
+    
     if mask is not None:
         disparity = np.where(mask, disparity, np.nan)
     
@@ -42,6 +51,11 @@ def colorize_disparity(disparity: np.ndarray, mask: np.ndarray = None, normalize
 
 
 def colorize_segmentation(segmentation: np.ndarray, cmap: str = 'Set1') -> np.ndarray:
+    try:
+        import matplotlib
+    except ImportError:
+        raise ImportError("matplotlib is required for colorized segmentation visualization. Install with: pip install matplotlib")
+    
     colored = matplotlib.colormaps[cmap]((segmentation % 20) / 20)
     colored = (colored.clip(0, 1) * 255).astype(np.uint8)[:, :, :3]
     return colored
